@@ -5,7 +5,7 @@ mod input_region;
 mod stats_panel;
 
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, CssProvider, STYLE_PROVIDER_PRIORITY_APPLICATION};
+use gtk4::{Application, ApplicationWindow, CssProvider, GestureClick, STYLE_PROVIDER_PRIORITY_APPLICATION};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -64,7 +64,6 @@ fn build_ui(app: &Application) {
 
     let current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(None));
     let stats_service = PetStatsService::new();
-    let stats_panel = Rc::new(StatsPanel::new(app, stats_service.clone()));
 
     // 加载并显示资源图像
     let image = match load_carousel_images(&window, current_pixbuf.clone()) {
@@ -78,6 +77,7 @@ fn build_ui(app: &Application) {
     
     // 设置窗口子部件，透明背景自动应用
     window.set_child(Some(&image));
+    let stats_panel = Rc::new(StatsPanel::new(&image, stats_service.clone()));
 
     // 诊断：记录窗口/图片是否收到点击事件
     setup_input_probe(&window, &image);
@@ -85,11 +85,24 @@ fn build_ui(app: &Application) {
     setup_long_press_drag(&window, &image, current_pixbuf.clone());
     // 右键弹出菜单（仅在可点击区域生效）
     {
-        let stats_panel = stats_panel.clone();
-        setup_context_menu(&image, Rc::new(move || {
-            stats_panel.present();
+        let stats_panel_for_panel_click = stats_panel.clone();
+        let stats_panel_for_menu_popup = stats_panel.clone();
+        setup_context_menu(&image, Rc::new(move |x, y| {
+            stats_panel_for_panel_click.toggle_at(x, y);
+        }), Rc::new(move || {
+            stats_panel_for_menu_popup.hide();
         }));
     }
+
+    let dismiss_panel_click = GestureClick::new();
+    dismiss_panel_click.set_button(1);
+    {
+        let stats_panel = stats_panel.clone();
+        dismiss_panel_click.connect_pressed(move |_, _, _, _| {
+            stats_panel.hide();
+        });
+    }
+    image.add_controller(dismiss_panel_click);
     
     window.present();
 

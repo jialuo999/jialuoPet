@@ -1,6 +1,7 @@
 use gtk4::cairo::Region;
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Box, Button, GestureClick, Image, Orientation, Popover};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::config::INPUT_DEBUG_LOG;
@@ -62,11 +63,17 @@ pub fn setup_input_probe(window: &ApplicationWindow, image: &Image) {
     image.add_controller(img_click);
 }
 
-pub fn setup_context_menu(image: &Image, on_panel_clicked: Rc<dyn Fn()>) {
+pub fn setup_context_menu(
+    image: &Image,
+    on_panel_clicked: Rc<dyn Fn(i32, i32)>,
+    on_before_menu_popup: Rc<dyn Fn()>,
+) {
     let popover = Popover::new();
     popover.set_has_arrow(true);
-    popover.set_autohide(true);
+    popover.set_autohide(false);
     popover.set_parent(image);
+
+    let last_click_pos = Rc::new(RefCell::new((0i32, 0i32)));
 
     let menu_box = Box::new(Orientation::Vertical, 4);
     for item in ["投喂", "面板", "互动", "系统"] {
@@ -75,9 +82,14 @@ pub fn setup_context_menu(image: &Image, on_panel_clicked: Rc<dyn Fn()>) {
         if item == "面板" {
             let panel_handler = on_panel_clicked.clone();
             let popover_for_click = popover.clone();
+            let last_click_pos = last_click_pos.clone();
             button.connect_clicked(move |_| {
-                panel_handler();
+                let (x, y) = *last_click_pos.borrow();
                 popover_for_click.popdown();
+                let panel_handler = panel_handler.clone();
+                glib::idle_add_local_once(move || {
+                    panel_handler(x, y);
+                });
             });
         }
         menu_box.append(&button);
@@ -88,10 +100,22 @@ pub fn setup_context_menu(image: &Image, on_panel_clicked: Rc<dyn Fn()>) {
     right_click.set_button(3);
     {
         let popover = popover.clone();
+        let last_click_pos = last_click_pos.clone();
+        let on_before_menu_popup = on_before_menu_popup.clone();
         right_click.connect_pressed(move |_, _, x, y| {
+            let xi = x.round() as i32;
+            let yi = y.round() as i32;
+            *last_click_pos.borrow_mut() = (xi, yi);
+
+            if popover.is_visible() {
+                popover.popdown();
+                return;
+            }
+
+            on_before_menu_popup();
             popover.set_pointing_to(Some(&gdk4::Rectangle::new(
-                x.round() as i32,
-                y.round() as i32,
+                xi,
+                yi,
                 1,
                 1,
             )));
@@ -99,6 +123,18 @@ pub fn setup_context_menu(image: &Image, on_panel_clicked: Rc<dyn Fn()>) {
         });
     }
     image.add_controller(right_click);
+
+    let left_click = GestureClick::new();
+    left_click.set_button(1);
+    {
+        let popover = popover.clone();
+        left_click.connect_pressed(move |_, _, _, _| {
+            if popover.is_visible() {
+                popover.popdown();
+            }
+        });
+    }
+    image.add_controller(left_click);
 }
 
 fn create_region_from_pixbuf_scaled(
