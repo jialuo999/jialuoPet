@@ -1,5 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, CssProvider, Image, STYLE_PROVIDER_PRIORITY_APPLICATION, EventControllerMotion};
+use gtk4::{Application, ApplicationWindow, CssProvider, GestureClick, Image, STYLE_PROVIDER_PRIORITY_APPLICATION};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use gtk4::cairo::Region;
 use std::path::PathBuf;
@@ -11,6 +11,7 @@ use std::time::Duration;
 
 const APP_ID: &str = "com.jialuo.niripet";
 const CAROUSEL_INTERVAL_MS: u64 = 150; // 150ms 轮播间隔
+const INPUT_DEBUG_LOG: bool = false;
 
 fn main() {
     // GTK 应用主入口
@@ -58,8 +59,10 @@ fn build_ui(app: &Application) {
     window.set_margin(Edge::Right, 20);
     window.set_margin(Edge::Bottom, 20);
 
+    let current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(None));
+
     // 加载并显示资源图像
-    let image = match load_carousel_images(&window) {
+    let image = match load_carousel_images(&window, current_pixbuf.clone()) {
         Ok(image_widget) => image_widget,
         Err(e) => {
             // Fatal 错误：资源缺失，程序无法继续运行
@@ -70,11 +73,30 @@ fn build_ui(app: &Application) {
     
     // 设置窗口子部件，透明背景自动应用
     window.set_child(Some(&image));
-    
-    // 为Image添加事件控制器，消费鼠标事件防止穿透
-    setup_image_event_handler(&image);
+
+    // 诊断：记录窗口/图片是否收到点击事件
+    setup_input_probe(&window, &image);
     
     window.present();
+
+    // 确保窗口 surface 就绪后至少应用一次输入区域
+    let window_for_idle = window.clone();
+    let image_for_idle = image.clone();
+    let pixbuf_for_idle = current_pixbuf.clone();
+    glib::idle_add_local_once(move || {
+        if let Some(pixbuf) = pixbuf_for_idle.borrow().as_ref() {
+            setup_image_input_region(&window_for_idle, &image_for_idle, pixbuf);
+        }
+    });
+
+    // 在 map 后再次应用输入区域，避免 surface 尚未提交导致输入区域丢失
+    let image_for_map = image.clone();
+    let pixbuf_for_map = current_pixbuf.clone();
+    window.connect_map(move |mapped_window| {
+        if let Some(pixbuf) = pixbuf_for_map.borrow().as_ref() {
+            setup_image_input_region(mapped_window, &image_for_map, pixbuf);
+        }
+    });
 }
 
 /// 加载轮播图像集
@@ -82,7 +104,10 @@ fn build_ui(app: &Application) {
 ///
 /// # Returns
 /// Result<Image, String> - 成功返回轮播 GTK Image Widget，失败返回错误信息
-fn load_carousel_images(window: &ApplicationWindow) -> Result<Image, String> {
+fn load_carousel_images(
+    window: &ApplicationWindow,
+    current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+) -> Result<Image, String> {
     let asset_dir = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/Default/Happy/1");
 
     if !asset_dir.is_dir() {
@@ -123,7 +148,8 @@ fn load_carousel_images(window: &ApplicationWindow) -> Result<Image, String> {
     // 初始化第一张图片
     if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&image_files[0]) {
         image_clone.set_from_pixbuf(Some(&pixbuf));
-        setup_image_input_region(&window_clone, &pixbuf);
+        *current_pixbuf.borrow_mut() = Some(pixbuf.clone());
+        setup_image_input_region(&window_clone, &image_clone, &pixbuf);
     }
 
     // 设置定时器，每 150ms 更新一次图片
@@ -146,8 +172,9 @@ fn load_carousel_images(window: &ApplicationWindow) -> Result<Image, String> {
         // 加载并显示下一张图片
         if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&next_path) {
             image_clone.set_from_pixbuf(Some(&pixbuf));
-            // 更新输入形状为图片边界矩形
-            setup_image_input_region(&window_clone, &pixbuf);
+            *current_pixbuf.borrow_mut() = Some(pixbuf.clone());
+            // 更新输入形状为图片不透明区域
+            setup_image_input_region(&window_clone, &image_clone, &pixbuf);
         }
 
         // 返回 Continue，使定时器继续运行
@@ -157,29 +184,128 @@ fn load_carousel_images(window: &ApplicationWindow) -> Result<Image, String> {
     Ok(image)
 }
 
-/// 为Image widget设置事件处理器，消费鼠标事件防止穿透
-fn setup_image_event_handler(image: &Image) {
-    // 创建motion事件控制器
-    let motion_controller = EventControllerMotion::new();
-    
-    // 连接motion-enter事件，确保正确捕获鼠标进入
-    motion_controller.connect_enter(|_ctrl, _x, _y| {
-        // 事件被处理，不继续传播
-    });
-    
-    image.add_controller(motion_controller);
+/// 设置窗口输入形状：仅图片不透明区域接收鼠标事件
+fn setup_image_input_region(
+    window: &ApplicationWindow,
+    image: &Image,
+    pixbuf: &gdk_pixbuf::Pixbuf,
+) {
+    let Some(surface) = window.surface() else {
+        eprintln!("[input-region] skipped: window surface is None");
+        return;
+    };
+
+    let alloc = image.allocation();
+    let (offset_x, offset_y, render_w, render_h) = (alloc.x(), alloc.y(), alloc.width(), alloc.height());
+
+    let region = if render_w > 0 && render_h > 0 {
+        create_region_from_pixbuf_scaled(pixbuf, offset_x, offset_y, render_w, render_h)
+    } else {
+        let full = gtk4::cairo::RectangleInt::new(0, 0, pixbuf.width(), pixbuf.height());
+        Region::create_rectangle(&full)
+    };
+
+    surface.set_input_region(&region);
+    if INPUT_DEBUG_LOG {
+        eprintln!(
+            "[input-region] applied: pixbuf={}x{}, render=({},{} {}x{}), has_alpha={}, region_empty={}",
+            pixbuf.width(),
+            pixbuf.height(),
+            offset_x,
+            offset_y,
+            render_w,
+            render_h,
+            pixbuf.has_alpha(),
+            region.is_empty()
+        );
+    }
 }
 
-/// 设置窗口输入形状为图片矩形（整个图片区域都可以接收鼠标事件）
-fn setup_image_input_region(window: &ApplicationWindow, pixbuf: &gdk_pixbuf::Pixbuf) {
-    let width = pixbuf.width();
-    let height = pixbuf.height();
-    
-    if let Some(surface) = window.surface() {
-        // 创建图片大小的矩形作为输入区域
-        let rect = gtk4::cairo::RectangleInt::new(0, 0, width, height);
-        let region = Region::create_rectangle(&rect);
-        surface.set_input_region(&region);
+fn setup_input_probe(window: &ApplicationWindow, image: &Image) {
+    if !INPUT_DEBUG_LOG {
+        return;
+    }
+
+    let win_click = GestureClick::new();
+    win_click.connect_pressed(|_, _, x, y| {
+        eprintln!("[probe] window click at ({x:.1}, {y:.1})");
+    });
+    window.add_controller(win_click);
+
+    let img_click = GestureClick::new();
+    img_click.connect_pressed(|_, _, x, y| {
+        eprintln!("[probe] image click at ({x:.1}, {y:.1})");
+    });
+    image.add_controller(img_click);
+}
+
+/// 根据 pixbuf 的 Alpha 通道创建输入区域（缩放到 widget 实际渲染坐标）
+/// Alpha > 0 的像素为可点击区域，透明背景会穿透
+fn create_region_from_pixbuf_scaled(
+    pixbuf: &gdk_pixbuf::Pixbuf,
+    offset_x: i32,
+    offset_y: i32,
+    render_w: i32,
+    render_h: i32,
+) -> Region {
+    let src_w = pixbuf.width();
+    let src_h = pixbuf.height();
+
+    if !pixbuf.has_alpha() {
+        let full = gtk4::cairo::RectangleInt::new(offset_x, offset_y, render_w, render_h);
+        return Region::create_rectangle(&full);
+    }
+
+    let Some(pixel_bytes) = pixbuf.pixel_bytes() else {
+        let full = gtk4::cairo::RectangleInt::new(offset_x, offset_y, render_w, render_h);
+        return Region::create_rectangle(&full);
+    };
+
+    let bytes = pixel_bytes.as_ref();
+    let channels = pixbuf.n_channels() as usize;
+    let rowstride = pixbuf.rowstride() as usize;
+    let alpha_idx = channels - 1;
+    let region = Region::create();
+
+    for dy in 0..render_h {
+        let sy = ((dy as i64 * src_h as i64) / render_h as i64) as usize;
+        let mut run_start: Option<i32> = None;
+
+        for dx in 0..render_w {
+            let sx = ((dx as i64 * src_w as i64) / render_w as i64) as usize;
+            let offset = sy * rowstride + sx * channels;
+            let alpha = if offset + alpha_idx < bytes.len() {
+                bytes[offset + alpha_idx]
+            } else {
+                0
+            };
+            match (run_start, alpha > 0) {
+                (None, true) => run_start = Some(dx),
+                (Some(start), false) => {
+                    let rect = gtk4::cairo::RectangleInt::new(offset_x + start, offset_y + dy, dx - start, 1);
+                    let _ = region.union_rectangle(&rect);
+                    run_start = None;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(start) = run_start {
+            let rect = gtk4::cairo::RectangleInt::new(
+                offset_x + start,
+                offset_y + dy,
+                render_w - start,
+                1,
+            );
+            let _ = region.union_rectangle(&rect);
+        }
+    }
+
+    if region.is_empty() {
+        let full = gtk4::cairo::RectangleInt::new(offset_x, offset_y, render_w, render_h);
+        Region::create_rectangle(&full)
+    } else {
+        region
     }
 }
 
