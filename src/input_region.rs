@@ -6,17 +6,65 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use crate::config::{DRAG_LONG_PRESS_MS, INPUT_DEBUG_LOG};
+use crate::stats_panel::{PetMode, PetStatsService};
 
 const TOUCH_HEAD_RECT_X1: i32 = 667;
 const TOUCH_HEAD_RECT_Y1: i32 = 113;
 const TOUCH_HEAD_RECT_X2: i32 = 373;
 const TOUCH_HEAD_RECT_Y2: i32 = 396;
 
+const TOUCH_HEAD_ILL_RECT_X1: i32 = 975;
+const TOUCH_HEAD_ILL_RECT_Y1: i32 = 912;
+const TOUCH_HEAD_ILL_RECT_X2: i32 = 607;
+const TOUCH_HEAD_ILL_RECT_Y2: i32 = 627;
+
 const TOUCH_BODY_RECT_X1: i32 = 634;
 const TOUCH_BODY_RECT_Y1: i32 = 944;
 const TOUCH_BODY_RECT_X2: i32 = 373;
 const TOUCH_BODY_RECT_Y2: i32 = 396;
+
+const TOUCH_BODY_ILL_RECT_X1: i32 = 46;
+const TOUCH_BODY_ILL_RECT_Y1: i32 = 934;
+const TOUCH_BODY_ILL_RECT_X2: i32 = 607;
+const TOUCH_BODY_ILL_RECT_Y2: i32 = 627;
 const TOUCH_TAP_MOVE_THRESHOLD: f64 = 8.0;
+
+struct TouchRects {
+    head_x1: i32,
+    head_y1: i32,
+    head_x2: i32,
+    head_y2: i32,
+    body_x1: i32,
+    body_y1: i32,
+    body_x2: i32,
+    body_y2: i32,
+}
+
+fn touch_rects_for_mode(mode: PetMode) -> TouchRects {
+    if mode == PetMode::Ill {
+        return TouchRects {
+            head_x1: TOUCH_HEAD_ILL_RECT_X1,
+            head_y1: TOUCH_HEAD_ILL_RECT_Y1,
+            head_x2: TOUCH_HEAD_ILL_RECT_X2,
+            head_y2: TOUCH_HEAD_ILL_RECT_Y2,
+            body_x1: TOUCH_BODY_ILL_RECT_X1,
+            body_y1: TOUCH_BODY_ILL_RECT_Y1,
+            body_x2: TOUCH_BODY_ILL_RECT_X2,
+            body_y2: TOUCH_BODY_ILL_RECT_Y2,
+        };
+    }
+
+    TouchRects {
+        head_x1: TOUCH_HEAD_RECT_X1,
+        head_y1: TOUCH_HEAD_RECT_Y1,
+        head_x2: TOUCH_HEAD_RECT_X2,
+        head_y2: TOUCH_HEAD_RECT_Y2,
+        body_x1: TOUCH_BODY_RECT_X1,
+        body_y1: TOUCH_BODY_RECT_Y1,
+        body_x2: TOUCH_BODY_RECT_X2,
+        body_y2: TOUCH_BODY_RECT_Y2,
+    }
+}
 
 pub fn setup_image_input_region(
     window: &ApplicationWindow,
@@ -238,6 +286,7 @@ fn map_point_to_pixbuf(
 pub fn setup_touch_click_regions(
     image: &Image,
     current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+    stats_service: PetStatsService,
     on_head_clicked: Rc<dyn Fn()>,
     on_body_clicked: Rc<dyn Fn()>,
 ) {
@@ -266,6 +315,7 @@ pub fn setup_touch_click_regions(
         let image = image.clone();
         let current_pixbuf = current_pixbuf.clone();
         let tap_state = tap_state.clone();
+        let stats_service = stats_service.clone();
         let on_head_clicked = on_head_clicked.clone();
         let on_body_clicked = on_body_clicked.clone();
         click.connect_released(move |_, _, x, y| {
@@ -288,15 +338,18 @@ pub fn setup_touch_click_regions(
                 return;
             };
 
-            let head_min_x = TOUCH_HEAD_RECT_X1.min(TOUCH_HEAD_RECT_X2);
-            let head_max_x = TOUCH_HEAD_RECT_X1.max(TOUCH_HEAD_RECT_X2);
-            let head_min_y = TOUCH_HEAD_RECT_Y1.min(TOUCH_HEAD_RECT_Y2);
-            let head_max_y = TOUCH_HEAD_RECT_Y1.max(TOUCH_HEAD_RECT_Y2);
+            let mode = stats_service.cal_mode();
+            let rects = touch_rects_for_mode(mode);
 
-            let body_min_x = TOUCH_BODY_RECT_X1.min(TOUCH_BODY_RECT_X2);
-            let body_max_x = TOUCH_BODY_RECT_X1.max(TOUCH_BODY_RECT_X2);
-            let body_min_y = TOUCH_BODY_RECT_Y1.min(TOUCH_BODY_RECT_Y2);
-            let body_max_y = TOUCH_BODY_RECT_Y1.max(TOUCH_BODY_RECT_Y2);
+            let head_min_x = rects.head_x1.min(rects.head_x2);
+            let head_max_x = rects.head_x1.max(rects.head_x2);
+            let head_min_y = rects.head_y1.min(rects.head_y2);
+            let head_max_y = rects.head_y1.max(rects.head_y2);
+
+            let body_min_x = rects.body_x1.min(rects.body_x2);
+            let body_max_x = rects.body_x1.max(rects.body_x2);
+            let body_min_y = rects.body_y1.min(rects.body_y2);
+            let body_max_y = rects.body_y1.max(rects.body_y2);
 
             if (head_min_x..=head_max_x).contains(&source_x)
                 && (head_min_y..=head_max_y).contains(&source_y)

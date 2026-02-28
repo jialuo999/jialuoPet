@@ -11,9 +11,12 @@ use crate::animation::{
     request_pinch_animation_start,
 };
 use crate::config::{DRAG_ALLOW_OFFSCREEN, DRAG_LONG_PRESS_MS};
+use crate::stats_panel::{PetMode, PetStatsService};
 
 const DRAG_FOCUS_PIXEL_X: i32 = 581;
 const DRAG_FOCUS_PIXEL_Y: i32 = 257;
+const DRAG_FOCUS_PIXEL_ILL_X: i32 = 455;
+const DRAG_FOCUS_PIXEL_ILL_Y: i32 = 236;
 const PINCH_RECT_X1: i32 = 518;
 const PINCH_RECT_Y1: i32 = 403;
 const PINCH_RECT_X2: i32 = 338;
@@ -23,6 +26,7 @@ const PINCH_MOVE_THRESHOLD: f64 = 8.0;
 fn focus_pixel_in_widget(
     image: &Image,
     current_pixbuf: &Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+    stats_service: &PetStatsService,
 ) -> (i32, i32) {
     let alloc = image.allocation();
     let widget_w = alloc.width().max(1) as f64;
@@ -30,14 +34,24 @@ fn focus_pixel_in_widget(
 
     let binding = current_pixbuf.borrow();
     let Some(pixbuf) = binding.as_ref() else {
-        return (DRAG_FOCUS_PIXEL_X, DRAG_FOCUS_PIXEL_Y);
+        return if stats_service.cal_mode() == PetMode::Ill {
+            (DRAG_FOCUS_PIXEL_ILL_X, DRAG_FOCUS_PIXEL_ILL_Y)
+        } else {
+            (DRAG_FOCUS_PIXEL_X, DRAG_FOCUS_PIXEL_Y)
+        };
+    };
+
+    let (focus_x, focus_y) = if stats_service.cal_mode() == PetMode::Ill {
+        (DRAG_FOCUS_PIXEL_ILL_X, DRAG_FOCUS_PIXEL_ILL_Y)
+    } else {
+        (DRAG_FOCUS_PIXEL_X, DRAG_FOCUS_PIXEL_Y)
     };
 
     let pixbuf_w = pixbuf.width().max(1) as f64;
     let pixbuf_h = pixbuf.height().max(1) as f64;
 
-    let mapped_x = ((DRAG_FOCUS_PIXEL_X as f64) * widget_w / pixbuf_w).round() as i32;
-    let mapped_y = ((DRAG_FOCUS_PIXEL_Y as f64) * widget_h / pixbuf_h).round() as i32;
+    let mapped_x = ((focus_x as f64) * widget_w / pixbuf_w).round() as i32;
+    let mapped_y = ((focus_y as f64) * widget_h / pixbuf_h).round() as i32;
 
     let clamped_x = mapped_x.clamp(0, alloc.width().saturating_sub(1));
     let clamped_y = mapped_y.clamp(0, alloc.height().saturating_sub(1));
@@ -97,6 +111,7 @@ pub fn setup_long_press_drag(
     window: &ApplicationWindow,
     image: &Image,
     current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+    stats_service: PetStatsService,
 ) {
     #[derive(Clone, Copy)]
     struct DragState {
@@ -199,6 +214,7 @@ pub fn setup_long_press_drag(
         let window = window.clone();
         let image = image.clone();
         let current_pixbuf = current_pixbuf.clone();
+        let stats_service = stats_service.clone();
         drag.connect_drag_update(move |_, offset_x, offset_y| {
             let mut drag_state = state.borrow_mut();
             if !drag_state.is_pressed {
@@ -266,7 +282,7 @@ pub fn setup_long_press_drag(
                 window.set_margin(Edge::Top, top);
 
                 let (focus_x_in_widget, focus_y_in_widget) =
-                    focus_pixel_in_widget(&image, &current_pixbuf);
+                    focus_pixel_in_widget(&image, &current_pixbuf, &stats_service);
 
                 drag_state.start_left_margin =
                     left + drag_state.drag_start_x.round() as i32 - focus_x_in_widget;
