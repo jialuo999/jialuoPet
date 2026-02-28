@@ -3,8 +3,9 @@ use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Box, Button, GestureClick, Image, Orientation, Popover};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
-use crate::config::INPUT_DEBUG_LOG;
+use crate::config::{DRAG_LONG_PRESS_MS, INPUT_DEBUG_LOG};
 
 const TOUCH_HEAD_RECT_X1: i32 = 667;
 const TOUCH_HEAD_RECT_Y1: i32 = 113;
@@ -15,6 +16,7 @@ const TOUCH_BODY_RECT_X1: i32 = 634;
 const TOUCH_BODY_RECT_Y1: i32 = 944;
 const TOUCH_BODY_RECT_X2: i32 = 373;
 const TOUCH_BODY_RECT_Y2: i32 = 396;
+const TOUCH_TAP_MOVE_THRESHOLD: f64 = 8.0;
 
 pub fn setup_image_input_region(
     window: &ApplicationWindow,
@@ -239,15 +241,49 @@ pub fn setup_touch_click_regions(
     on_head_clicked: Rc<dyn Fn()>,
     on_body_clicked: Rc<dyn Fn()>,
 ) {
+    #[derive(Default)]
+    struct TapState {
+        press_x: f64,
+        press_y: f64,
+        press_at: Option<Instant>,
+    }
+
+    let tap_state = Rc::new(RefCell::new(TapState::default()));
     let click = GestureClick::new();
     click.set_button(1);
 
     {
+        let tap_state = tap_state.clone();
+        click.connect_pressed(move |_, _, x, y| {
+            let mut state = tap_state.borrow_mut();
+            state.press_x = x;
+            state.press_y = y;
+            state.press_at = Some(Instant::now());
+        });
+    }
+
+    {
         let image = image.clone();
         let current_pixbuf = current_pixbuf.clone();
+        let tap_state = tap_state.clone();
         let on_head_clicked = on_head_clicked.clone();
         let on_body_clicked = on_body_clicked.clone();
-        click.connect_pressed(move |_, _, x, y| {
+        click.connect_released(move |_, _, x, y| {
+            let mut state = tap_state.borrow_mut();
+            let Some(press_at) = state.press_at.take() else {
+                return;
+            };
+
+            if press_at.elapsed().as_millis() as u64 >= DRAG_LONG_PRESS_MS {
+                return;
+            }
+
+            let dx = x - state.press_x;
+            let dy = y - state.press_y;
+            if dx.abs() >= TOUCH_TAP_MOVE_THRESHOLD || dy.abs() >= TOUCH_TAP_MOVE_THRESHOLD {
+                return;
+            }
+
             let Some((source_x, source_y)) = map_point_to_pixbuf(&image, &current_pixbuf, x, y) else {
                 return;
             };
