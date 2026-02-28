@@ -6,6 +6,16 @@ use std::rc::Rc;
 
 use crate::config::INPUT_DEBUG_LOG;
 
+const TOUCH_HEAD_RECT_X1: i32 = 667;
+const TOUCH_HEAD_RECT_Y1: i32 = 113;
+const TOUCH_HEAD_RECT_X2: i32 = 373;
+const TOUCH_HEAD_RECT_Y2: i32 = 396;
+
+const TOUCH_BODY_RECT_X1: i32 = 634;
+const TOUCH_BODY_RECT_Y1: i32 = 944;
+const TOUCH_BODY_RECT_X2: i32 = 373;
+const TOUCH_BODY_RECT_Y2: i32 = 396;
+
 pub fn setup_image_input_region(
     window: &ApplicationWindow,
     image: &Image,
@@ -192,6 +202,82 @@ pub fn setup_context_menu(
         });
     }
     image.add_controller(left_click);
+}
+
+fn map_point_to_pixbuf(
+    image: &Image,
+    current_pixbuf: &Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+    pointer_x: f64,
+    pointer_y: f64,
+) -> Option<(i32, i32)> {
+    let alloc = image.allocation();
+    if alloc.width() <= 0 || alloc.height() <= 0 {
+        return None;
+    }
+
+    if pointer_x < 0.0
+        || pointer_y < 0.0
+        || pointer_x >= alloc.width() as f64
+        || pointer_y >= alloc.height() as f64
+    {
+        return None;
+    }
+
+    let binding = current_pixbuf.borrow();
+    let pixbuf = binding.as_ref()?;
+    let pixbuf_w = pixbuf.width().max(1) as f64;
+    let pixbuf_h = pixbuf.height().max(1) as f64;
+
+    let source_x = (pointer_x * pixbuf_w / alloc.width().max(1) as f64).floor() as i32;
+    let source_y = (pointer_y * pixbuf_h / alloc.height().max(1) as f64).floor() as i32;
+    Some((source_x, source_y))
+}
+
+pub fn setup_touch_click_regions(
+    image: &Image,
+    current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+    on_head_clicked: Rc<dyn Fn()>,
+    on_body_clicked: Rc<dyn Fn()>,
+) {
+    let click = GestureClick::new();
+    click.set_button(1);
+
+    {
+        let image = image.clone();
+        let current_pixbuf = current_pixbuf.clone();
+        let on_head_clicked = on_head_clicked.clone();
+        let on_body_clicked = on_body_clicked.clone();
+        click.connect_pressed(move |_, _, x, y| {
+            let Some((source_x, source_y)) = map_point_to_pixbuf(&image, &current_pixbuf, x, y) else {
+                return;
+            };
+
+            let head_min_x = TOUCH_HEAD_RECT_X1.min(TOUCH_HEAD_RECT_X2);
+            let head_max_x = TOUCH_HEAD_RECT_X1.max(TOUCH_HEAD_RECT_X2);
+            let head_min_y = TOUCH_HEAD_RECT_Y1.min(TOUCH_HEAD_RECT_Y2);
+            let head_max_y = TOUCH_HEAD_RECT_Y1.max(TOUCH_HEAD_RECT_Y2);
+
+            let body_min_x = TOUCH_BODY_RECT_X1.min(TOUCH_BODY_RECT_X2);
+            let body_max_x = TOUCH_BODY_RECT_X1.max(TOUCH_BODY_RECT_X2);
+            let body_min_y = TOUCH_BODY_RECT_Y1.min(TOUCH_BODY_RECT_Y2);
+            let body_max_y = TOUCH_BODY_RECT_Y1.max(TOUCH_BODY_RECT_Y2);
+
+            if (head_min_x..=head_max_x).contains(&source_x)
+                && (head_min_y..=head_max_y).contains(&source_y)
+            {
+                on_head_clicked();
+                return;
+            }
+
+            if (body_min_x..=body_max_x).contains(&source_x)
+                && (body_min_y..=body_max_y).contains(&source_y)
+            {
+                on_body_clicked();
+            }
+        });
+    }
+
+    image.add_controller(click);
 }
 
 fn create_region_from_pixbuf_scaled(

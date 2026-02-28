@@ -13,12 +13,17 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use animation::{is_shutdown_animation_finished, load_carousel_images, request_shutdown_animation};
+use animation::{
+    is_shutdown_animation_finished, load_carousel_images, request_shutdown_animation,
+    request_touch_body_animation, request_touch_head_animation,
+};
 use config::{
     load_panel_debug_config, start_panel_config_watcher, APP_ID, CAROUSEL_INTERVAL_MS,
 };
 use drag::setup_long_press_drag;
-use input_region::{setup_context_menu, setup_image_input_region, setup_input_probe};
+use input_region::{
+    setup_context_menu, setup_image_input_region, setup_input_probe, setup_touch_click_regions,
+};
 use stats_panel::{PetStatsService, StatsPanel};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -122,6 +127,16 @@ fn build_ui(app: &Application) {
     setup_input_probe(&window, &image);
     // 长按图片不透明区域后可拖动窗口位置
     setup_long_press_drag(&window, &image, current_pixbuf.clone());
+    setup_touch_click_regions(
+        &image,
+        current_pixbuf.clone(),
+        Rc::new(|| {
+            request_touch_head_animation();
+        }),
+        Rc::new(|| {
+            request_touch_body_animation();
+        }),
+    );
     // 右键弹出菜单（仅在可点击区域生效）
     {
         let stats_panel_for_panel_click = stats_panel.clone();

@@ -24,11 +24,15 @@ const PINCH_ANIM_LOOP_REQUESTED: u8 = 2;
 const PINCH_ANIM_END_REQUESTED: u8 = 3;
 const SHUTDOWN_ANIM_IDLE: u8 = 0;
 const SHUTDOWN_ANIM_REQUESTED: u8 = 1;
+const TOUCH_ANIM_IDLE: u8 = 0;
+const TOUCH_ANIM_HEAD_REQUESTED: u8 = 1;
+const TOUCH_ANIM_BODY_REQUESTED: u8 = 2;
 
 static DRAG_RAISE_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(DRAG_ANIM_IDLE);
 static PINCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(PINCH_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(SHUTDOWN_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_FINISHED: AtomicBool = AtomicBool::new(false);
+static TOUCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(TOUCH_ANIM_IDLE);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DragPlaybackMode {
@@ -44,6 +48,20 @@ enum PinchPlaybackMode {
     Start,
     Loop,
     End,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TouchPlaybackMode {
+    None,
+    Head,
+    Body,
+}
+
+#[derive(Clone, Default)]
+struct TouchStageVariants {
+    stage_a: Vec<Vec<PathBuf>>,
+    stage_b: Vec<Vec<PathBuf>>,
+    stage_c: Vec<Vec<PathBuf>>,
 }
 
 pub fn request_drag_raise_animation_start() {
@@ -69,6 +87,14 @@ pub fn request_pinch_animation_end() {
 pub fn request_shutdown_animation() {
     SHUTDOWN_ANIMATION_FINISHED.store(false, Ordering::Relaxed);
     SHUTDOWN_ANIMATION_PHASE.store(SHUTDOWN_ANIM_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_touch_head_animation() {
+    TOUCH_ANIMATION_PHASE.store(TOUCH_ANIM_HEAD_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_touch_body_animation() {
+    TOUCH_ANIMATION_PHASE.store(TOUCH_ANIM_BODY_REQUESTED, Ordering::Relaxed);
 }
 
 pub fn is_shutdown_animation_finished() -> bool {
@@ -244,6 +270,42 @@ fn collect_mode_variant_dirs(root: &Path, mode: PetMode) -> Vec<PathBuf> {
     }
 
     selected
+}
+
+fn path_matches_mode(path: &Path, mode: PetMode) -> bool {
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .map(|name| dir_name_matches_mode(name, mode))
+            .unwrap_or(false)
+    })
+}
+
+fn path_contains_keyword(path: &Path, keyword: &str) -> bool {
+    let keyword = keyword.to_ascii_lowercase();
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .map(|name| name.to_ascii_lowercase().contains(&keyword))
+            .unwrap_or(false)
+    })
+}
+
+fn path_in_stage_branch(path: &Path, touch_root: &Path, stage_prefix: &str) -> bool {
+    let stage_prefix = stage_prefix.to_ascii_lowercase();
+    let Ok(relative) = path.strip_prefix(touch_root) else {
+        return false;
+    };
+
+    relative.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .map(|name| name.to_ascii_lowercase().starts_with(&stage_prefix))
+            .unwrap_or(false)
+    })
 }
 
 fn choose_startup_animation_files(startup_root: &Path, mode: PetMode) -> Option<Vec<PathBuf>> {
@@ -439,6 +501,87 @@ fn collect_pinch_end_files(pinch_root: &Path, mode: PetMode) -> Vec<PathBuf> {
     }
 }
 
+fn collect_touch_stage_variants(
+    touch_root: &Path,
+    mode: PetMode,
+    stage_prefix: &str,
+) -> Vec<Vec<PathBuf>> {
+    let candidate_dirs: Vec<PathBuf> = collect_png_variant_dirs_recursive(touch_root)
+        .into_iter()
+        .filter(|path| path_in_stage_branch(path, touch_root, stage_prefix))
+        .collect();
+
+    let mut mode_dirs: Vec<PathBuf> = candidate_dirs
+        .iter()
+        .filter(|path| path_matches_mode(path, mode))
+        .cloned()
+        .collect();
+
+    let is_touch_body = touch_root
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|name| name.eq_ignore_ascii_case("Touch_Body"))
+        .unwrap_or(false);
+    if is_touch_body && mode == PetMode::Happy {
+        mode_dirs.retain(|path| !path_contains_keyword(path, "happy_turn"));
+    }
+
+    if mode_dirs.is_empty() && mode != PetMode::Happy {
+        mode_dirs = candidate_dirs
+            .into_iter()
+            .filter(|path| path_matches_mode(path, PetMode::Happy))
+            .collect();
+        if is_touch_body {
+            mode_dirs.retain(|path| !path_contains_keyword(path, "happy_turn"));
+        }
+    }
+
+    mode_dirs
+        .into_iter()
+        .filter_map(|path| {
+            let files = collect_png_files(&path).ok()?;
+            if files.is_empty() {
+                None
+            } else {
+                Some(files)
+            }
+        })
+        .collect()
+}
+
+fn collect_touch_variants(touch_root: &Path, mode: PetMode) -> TouchStageVariants {
+    TouchStageVariants {
+        stage_a: collect_touch_stage_variants(touch_root, mode, "A"),
+        stage_b: collect_touch_stage_variants(touch_root, mode, "B"),
+        stage_c: collect_touch_stage_variants(touch_root, mode, "C"),
+    }
+}
+
+fn build_touch_sequence(variants: &TouchStageVariants) -> Vec<PathBuf> {
+    let mut sequence = Vec::new();
+
+    if !variants.stage_a.is_empty() {
+        let index = pseudo_random_index(variants.stage_a.len());
+        sequence.extend(variants.stage_a[index].iter().cloned());
+    }
+    if !variants.stage_b.is_empty() {
+        let index = pseudo_random_index(variants.stage_b.len());
+        sequence.extend(variants.stage_b[index].iter().cloned());
+    }
+    if !variants.stage_c.is_empty() {
+        let index = pseudo_random_index(variants.stage_c.len());
+        sequence.extend(variants.stage_c[index].iter().cloned());
+    }
+
+    sequence
+}
+
+fn stop_touch_playback(state: &mut CarouselState) {
+    state.touch_playback_mode = TouchPlaybackMode::None;
+    state.touch_files.clear();
+    state.touch_index = 0;
+}
+
 fn collect_shutdown_variants(shutdown_root: &Path, mode: PetMode) -> Vec<Vec<PathBuf>> {
     collect_mode_variant_dirs(shutdown_root, mode)
         .iter()
@@ -544,6 +687,11 @@ struct CarouselState {
     pinch_end_files: Vec<PathBuf>,
     pinch_end_index: usize,
     pinch_playback_mode: PinchPlaybackMode,
+    touch_head_variants: TouchStageVariants,
+    touch_body_variants: TouchStageVariants,
+    touch_files: Vec<PathBuf>,
+    touch_index: usize,
+    touch_playback_mode: TouchPlaybackMode,
     shutdown_variants: Vec<Vec<PathBuf>>,
     shutdown_files: Vec<PathBuf>,
     shutdown_index: usize,
@@ -595,6 +743,14 @@ pub fn load_carousel_images(
         &animation_config.assets_body_root,
         &animation_config.shutdown_root,
     );
+    let touch_head_root = body_asset_path(
+        &animation_config.assets_body_root,
+        &animation_config.touch_head_root,
+    );
+    let touch_body_root = body_asset_path(
+        &animation_config.assets_body_root,
+        &animation_config.touch_body_root,
+    );
 
     let drag_raise_start_files = collect_drag_raise_start_files(&drag_raise_static_root, current_mode);
     let drag_raise_loop_files = collect_drag_raise_loop_files(&drag_raise_dynamic_root, current_mode);
@@ -602,6 +758,8 @@ pub fn load_carousel_images(
     let pinch_start_files = collect_pinch_start_files(&pinch_root, current_mode);
     let pinch_loop_variants = collect_pinch_loop_variants(&pinch_root, current_mode);
     let pinch_end_files = collect_pinch_end_files(&pinch_root, current_mode);
+    let touch_head_variants = collect_touch_variants(&touch_head_root, current_mode);
+    let touch_body_variants = collect_touch_variants(&touch_body_root, current_mode);
     let shutdown_variants = collect_shutdown_variants(&shutdown_root, current_mode);
 
     let image = Image::new();
@@ -632,6 +790,11 @@ pub fn load_carousel_images(
         pinch_end_files,
         pinch_end_index: 0,
         pinch_playback_mode: PinchPlaybackMode::None,
+        touch_head_variants,
+        touch_body_variants,
+        touch_files: Vec::new(),
+        touch_index: 0,
+        touch_playback_mode: TouchPlaybackMode::None,
         shutdown_variants,
         shutdown_files: Vec::new(),
         shutdown_index: 0,
@@ -646,6 +809,8 @@ pub fn load_carousel_images(
     let drag_raise_static_root_clone = drag_raise_static_root.clone();
     let pinch_root_clone = pinch_root.clone();
     let shutdown_root_clone = shutdown_root.clone();
+    let touch_head_root_clone = touch_head_root.clone();
+    let touch_body_root_clone = touch_body_root.clone();
     let image_clone = image.clone();
     let window_clone = window.clone();
 
@@ -671,6 +836,7 @@ pub fn load_carousel_images(
                 SHUTDOWN_ANIMATION_PHASE.swap(SHUTDOWN_ANIM_IDLE, Ordering::Relaxed);
             let drag_request = DRAG_RAISE_ANIMATION_PHASE.swap(DRAG_ANIM_IDLE, Ordering::Relaxed);
             let pinch_request = PINCH_ANIMATION_PHASE.swap(PINCH_ANIM_IDLE, Ordering::Relaxed);
+            let touch_request = TOUCH_ANIMATION_PHASE.swap(TOUCH_ANIM_IDLE, Ordering::Relaxed);
             let mut forced_frame: Option<PathBuf> = None;
 
             if !state_mut.playing_startup {
@@ -703,6 +869,13 @@ pub fn load_carousel_images(
                     state_mut.pinch_loop_index = 0;
                     state_mut.pinch_end_files = collect_pinch_end_files(&pinch_root_clone, next_mode);
                     state_mut.pinch_end_index = 0;
+                    state_mut.touch_head_variants =
+                        collect_touch_variants(&touch_head_root_clone, next_mode);
+                    state_mut.touch_body_variants =
+                        collect_touch_variants(&touch_body_root_clone, next_mode);
+                    state_mut.touch_files.clear();
+                    state_mut.touch_index = 0;
+                    state_mut.touch_playback_mode = TouchPlaybackMode::None;
                     state_mut.shutdown_variants = collect_shutdown_variants(&shutdown_root_clone, next_mode);
                     if !state_mut.playing_shutdown
                         && state_mut.drag_playback_mode == DragPlaybackMode::None
@@ -710,6 +883,31 @@ pub fn load_carousel_images(
                     {
                         forced_frame = state_mut.default_files.first().cloned();
                     }
+                }
+            }
+
+            if !state_mut.playing_shutdown
+                && state_mut.drag_playback_mode == DragPlaybackMode::None
+                && state_mut.pinch_playback_mode == PinchPlaybackMode::None
+                && state_mut.touch_playback_mode == TouchPlaybackMode::None
+            {
+                let (playback_mode, sequence) = match touch_request {
+                    TOUCH_ANIM_HEAD_REQUESTED => (
+                        TouchPlaybackMode::Head,
+                        build_touch_sequence(&state_mut.touch_head_variants),
+                    ),
+                    TOUCH_ANIM_BODY_REQUESTED => (
+                        TouchPlaybackMode::Body,
+                        build_touch_sequence(&state_mut.touch_body_variants),
+                    ),
+                    _ => (TouchPlaybackMode::None, Vec::new()),
+                };
+
+                if playback_mode != TouchPlaybackMode::None && !sequence.is_empty() {
+                    state_mut.touch_playback_mode = playback_mode;
+                    state_mut.touch_files = sequence;
+                    state_mut.touch_index = 0;
+                    forced_frame = state_mut.touch_files.first().cloned();
                 }
             }
 
@@ -729,6 +927,7 @@ pub fn load_carousel_images(
             if !state_mut.playing_shutdown {
                 match drag_request {
                 DRAG_ANIM_START_REQUESTED => {
+                    stop_touch_playback(&mut state_mut);
                     if !state_mut.drag_raise_start_files.is_empty() {
                         state_mut.drag_playback_mode = DragPlaybackMode::Start;
                         state_mut.drag_raise_start_index = 0;
@@ -740,6 +939,7 @@ pub fn load_carousel_images(
                     }
                 }
                 DRAG_ANIM_LOOP_REQUESTED => {
+                    stop_touch_playback(&mut state_mut);
                     if state_mut.drag_playback_mode != DragPlaybackMode::Start
                         && !state_mut.drag_raise_loop_files.is_empty()
                     {
@@ -906,6 +1106,21 @@ pub fn load_carousel_images(
                     state_mut.pinch_end_files[next_index].clone()
                 } else {
                     state_mut.pinch_playback_mode = PinchPlaybackMode::None;
+                    if state_mut.playing_startup {
+                        state_mut.startup_files[state_mut.startup_index].clone()
+                    } else {
+                        state_mut.default_files[state_mut.default_index].clone()
+                    }
+                }
+            } else if state_mut.touch_playback_mode != TouchPlaybackMode::None {
+                let next_index = state_mut.touch_index + 1;
+                if next_index < state_mut.touch_files.len() {
+                    state_mut.touch_index = next_index;
+                    state_mut.touch_files[next_index].clone()
+                } else {
+                    state_mut.touch_playback_mode = TouchPlaybackMode::None;
+                    state_mut.touch_files.clear();
+                    state_mut.touch_index = 0;
                     if state_mut.playing_startup {
                         state_mut.startup_files[state_mut.startup_index].clone()
                     } else {

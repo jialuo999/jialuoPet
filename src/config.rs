@@ -26,6 +26,8 @@ pub const RAISE_DYNAMIC_ROOT: &str = "Raise/Raised_Dynamic";
 pub const RAISE_STATIC_ROOT: &str = "Raise/Raised_Static";
 pub const PINCH_ROOT: &str = "Pinch";
 pub const SHUTDOWN_ROOT: &str = "Shutdown";
+pub const TOUCH_HEAD_ROOT: &str = "Touch_Head";
+pub const TOUCH_BODY_ROOT: &str = "Touch_Body";
 
 // 调试：面板数值控制
 pub const PANEL_BASIC_STAT_MAX: u32 = 100;
@@ -170,6 +172,8 @@ pub struct AnimationPathConfig {
 	pub raise_static_root: String,
 	pub pinch_root: String,
 	pub shutdown_root: String,
+	pub touch_head_root: String,
+	pub touch_body_root: String,
 }
 
 impl Default for AnimationPathConfig {
@@ -188,6 +192,8 @@ impl Default for AnimationPathConfig {
 			raise_static_root: RAISE_STATIC_ROOT.to_string(),
 			pinch_root: PINCH_ROOT.to_string(),
 			shutdown_root: SHUTDOWN_ROOT.to_string(),
+			touch_head_root: TOUCH_HEAD_ROOT.to_string(),
+			touch_body_root: TOUCH_BODY_ROOT.to_string(),
 		}
 	}
 }
@@ -213,6 +219,12 @@ impl AnimationPathConfig {
 		}
 		if self.shutdown_root.trim().is_empty() {
 			self.shutdown_root = defaults.shutdown_root;
+		}
+		if self.touch_head_root.trim().is_empty() {
+			self.touch_head_root = defaults.touch_head_root;
+		}
+		if self.touch_body_root.trim().is_empty() {
+			self.touch_body_root = defaults.touch_body_root;
 		}
 		if self.default_nomal_idle_root.trim().is_empty() {
 			self.default_nomal_idle_root = defaults.default_nomal_idle_root;
@@ -249,6 +261,8 @@ struct AnimationPathConfigPartial {
 	raise_static_root: Option<String>,
 	pinch_root: Option<String>,
 	shutdown_root: Option<String>,
+	touch_head_root: Option<String>,
+	touch_body_root: Option<String>,
 }
 
 impl AnimationPathConfigPartial {
@@ -282,6 +296,12 @@ impl AnimationPathConfigPartial {
 		}
 		if let Some(value) = self.shutdown_root {
 			base.shutdown_root = value;
+		}
+		if let Some(value) = self.touch_head_root {
+			base.touch_head_root = value;
+		}
+		if let Some(value) = self.touch_body_root {
+			base.touch_body_root = value;
 		}
 
 		base

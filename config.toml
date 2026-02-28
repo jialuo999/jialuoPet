@@ -36,3 +36,5 @@ raise_static_root = "Raise/Raised_Static"
 # 命名规划根目录（按 Happy/Nomal/PoorCondition/Ill 匹配）
 pinch_root = "Pinch"
 shutdown_root = "Shutdown"
+touch_head_root = "Touch_Head"
+touch_body_root = "Touch_Body"
