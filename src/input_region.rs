@@ -67,11 +67,48 @@ pub fn setup_context_menu(
     image: &Image,
     on_panel_clicked: Rc<dyn Fn(i32, i32)>,
     on_before_menu_popup: Rc<dyn Fn()>,
+    on_restart_clicked: Rc<dyn Fn()>,
+    on_quit_clicked: Rc<dyn Fn()>,
 ) {
     let popover = Popover::new();
     popover.set_has_arrow(true);
     popover.set_autohide(false);
     popover.set_parent(image);
+
+    let system_popover = Popover::new();
+    system_popover.set_has_arrow(true);
+    system_popover.set_autohide(false);
+    system_popover.set_parent(image);
+
+    let system_box = Box::new(Orientation::Vertical, 4);
+    let restart_button = Button::with_label("重启桌宠");
+    restart_button.set_halign(gtk4::Align::Fill);
+    {
+        let popover_for_click = popover.clone();
+        let system_popover_for_click = system_popover.clone();
+        let on_restart_clicked = on_restart_clicked.clone();
+        restart_button.connect_clicked(move |_| {
+            popover_for_click.popdown();
+            system_popover_for_click.popdown();
+            on_restart_clicked();
+        });
+    }
+
+    let quit_button = Button::with_label("退出桌宠");
+    quit_button.set_halign(gtk4::Align::Fill);
+    {
+        let popover_for_click = popover.clone();
+        let system_popover_for_click = system_popover.clone();
+        let on_quit_clicked = on_quit_clicked.clone();
+        quit_button.connect_clicked(move |_| {
+            popover_for_click.popdown();
+            system_popover_for_click.popdown();
+            on_quit_clicked();
+        });
+    }
+    system_box.append(&restart_button);
+    system_box.append(&quit_button);
+    system_popover.set_child(Some(&system_box));
 
     let last_click_pos = Rc::new(RefCell::new((0i32, 0i32)));
 
@@ -91,6 +128,19 @@ pub fn setup_context_menu(
                     panel_handler(x, y);
                 });
             });
+        } else if item == "系统" {
+            let system_popover_for_click = system_popover.clone();
+            let last_click_pos = last_click_pos.clone();
+            button.connect_clicked(move |_| {
+                let (x, y) = *last_click_pos.borrow();
+                system_popover_for_click
+                    .set_pointing_to(Some(&gdk4::Rectangle::new(x, y, 1, 1)));
+                if system_popover_for_click.is_visible() {
+                    system_popover_for_click.popdown();
+                } else {
+                    system_popover_for_click.popup();
+                }
+            });
         }
         menu_box.append(&button);
     }
@@ -102,6 +152,7 @@ pub fn setup_context_menu(
         let popover = popover.clone();
         let last_click_pos = last_click_pos.clone();
         let on_before_menu_popup = on_before_menu_popup.clone();
+        let system_popover = system_popover.clone();
         right_click.connect_pressed(move |_, _, x, y| {
             let xi = x.round() as i32;
             let yi = y.round() as i32;
@@ -109,10 +160,12 @@ pub fn setup_context_menu(
 
             if popover.is_visible() {
                 popover.popdown();
+                system_popover.popdown();
                 return;
             }
 
             on_before_menu_popup();
+            system_popover.popdown();
             popover.set_pointing_to(Some(&gdk4::Rectangle::new(
                 xi,
                 yi,
@@ -128,9 +181,13 @@ pub fn setup_context_menu(
     left_click.set_button(1);
     {
         let popover = popover.clone();
+        let system_popover = system_popover.clone();
         left_click.connect_pressed(move |_, _, _, _| {
             if popover.is_visible() {
                 popover.popdown();
+            }
+            if system_popover.is_visible() {
+                system_popover.popdown();
             }
         });
     }

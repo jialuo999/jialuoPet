@@ -4,19 +4,26 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::config::{CAROUSEL_INTERVAL_MS, STARTUP_EXCLUDED_DIRS};
+use crate::config::{
+    ASSETS_BODY_ROOT, CAROUSEL_INTERVAL_MS, DEFAULT_HAPPY_IDLE_VARIANTS, RAISE_DYNAMIC_ROOT,
+    RAISE_STATIC_ROOT, SHUTDOWN_VARIANTS, STARTUP_EXCLUDED_DIRS, STARTUP_ROOT,
+};
 use crate::input_region::setup_image_input_region;
 
 const DRAG_ANIM_IDLE: u8 = 0;
 const DRAG_ANIM_START_REQUESTED: u8 = 1;
 const DRAG_ANIM_LOOP_REQUESTED: u8 = 2;
 const DRAG_ANIM_END_REQUESTED: u8 = 3;
+const SHUTDOWN_ANIM_IDLE: u8 = 0;
+const SHUTDOWN_ANIM_REQUESTED: u8 = 1;
 
 static DRAG_RAISE_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(DRAG_ANIM_IDLE);
+static SHUTDOWN_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(SHUTDOWN_ANIM_IDLE);
+static SHUTDOWN_ANIMATION_FINISHED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DragPlaybackMode {
@@ -36,6 +43,19 @@ pub fn request_drag_raise_animation_loop() {
 
 pub fn request_drag_raise_animation_end() {
     DRAG_RAISE_ANIMATION_PHASE.store(DRAG_ANIM_END_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_shutdown_animation() {
+    SHUTDOWN_ANIMATION_FINISHED.store(false, Ordering::Relaxed);
+    SHUTDOWN_ANIMATION_PHASE.store(SHUTDOWN_ANIM_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn is_shutdown_animation_finished() -> bool {
+    SHUTDOWN_ANIMATION_FINISHED.load(Ordering::Relaxed)
+}
+
+fn body_asset_path(relative: &str) -> PathBuf {
+    PathBuf::from(ASSETS_BODY_ROOT).join(relative)
 }
 
 fn pseudo_random_index(len: usize) -> usize {
@@ -196,6 +216,30 @@ fn collect_drag_raise_end_variants(raise_static_root: &Path) -> Vec<Vec<PathBuf>
         .collect()
 }
 
+fn collect_shutdown_variants() -> Vec<Vec<PathBuf>> {
+    SHUTDOWN_VARIANTS
+        .iter()
+        .filter_map(|relative_dir| {
+            let files = collect_png_files(&body_asset_path(relative_dir)).ok()?;
+            if files.is_empty() {
+                None
+            } else {
+                Some(files)
+            }
+        })
+        .collect()
+}
+
+fn collect_default_happy_idle_files() -> Result<Vec<PathBuf>, String> {
+    let mut all_files = Vec::new();
+    for variant in DEFAULT_HAPPY_IDLE_VARIANTS {
+        let dir = body_asset_path(variant);
+        let mut files = collect_png_files(&dir)?;
+        all_files.append(&mut files);
+    }
+    Ok(all_files)
+}
+
 struct CarouselState {
     startup_files: Vec<PathBuf>,
     startup_index: usize,
@@ -208,6 +252,11 @@ struct CarouselState {
     drag_raise_end_variants: Vec<Vec<PathBuf>>,
     drag_raise_end_files: Vec<PathBuf>,
     drag_raise_end_index: usize,
+    shutdown_variants: Vec<Vec<PathBuf>>,
+    shutdown_files: Vec<PathBuf>,
+    shutdown_index: usize,
+    shutdown_hold_frame: Option<PathBuf>,
+    playing_shutdown: bool,
     drag_playback_mode: DragPlaybackMode,
     playing_startup: bool,
 }
@@ -216,20 +265,20 @@ pub fn load_carousel_images(
     window: &ApplicationWindow,
     current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
 ) -> Result<Image, String> {
-    let default_dir = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/Default/Happy/1");
-    let default_files = collect_png_files(&default_dir)?;
+    let default_files = collect_default_happy_idle_files()?;
     if default_files.is_empty() {
-        return Err(format!("目录中没有找到 PNG 文件：{}", default_dir.display()));
+        return Err("默认静息动画目录中没有找到 PNG 文件".to_string());
     }
 
-    let startup_root = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/StartUP");
+    let startup_root = body_asset_path(STARTUP_ROOT);
     let startup_files = choose_startup_animation_files(&startup_root).unwrap_or_default();
     let playing_startup = !startup_files.is_empty();
-    let drag_raise_dir = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/Raise/Raised_Dynamic");
+    let drag_raise_dir = body_asset_path(RAISE_DYNAMIC_ROOT);
     let drag_raise_loop_files = collect_drag_raise_happy_files(&drag_raise_dir);
-    let drag_raise_static_dir = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/Raise/Raised_Static");
+    let drag_raise_static_dir = body_asset_path(RAISE_STATIC_ROOT);
     let drag_raise_start_files = collect_drag_raise_start_files(&drag_raise_static_dir);
     let drag_raise_end_variants = collect_drag_raise_end_variants(&drag_raise_static_dir);
+    let shutdown_variants = collect_shutdown_variants();
 
     let image = Image::new();
     image.set_pixel_size(256);
@@ -246,6 +295,11 @@ pub fn load_carousel_images(
         drag_raise_end_variants,
         drag_raise_end_files: Vec::new(),
         drag_raise_end_index: 0,
+        shutdown_variants,
+        shutdown_files: Vec::new(),
+        shutdown_index: 0,
+        shutdown_hold_frame: None,
+        playing_shutdown: false,
         drag_playback_mode: DragPlaybackMode::None,
         playing_startup,
     }));
@@ -271,10 +325,26 @@ pub fn load_carousel_images(
     timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
         let next_path = {
             let mut state_mut = state_clone.borrow_mut();
+            let shutdown_request =
+                SHUTDOWN_ANIMATION_PHASE.swap(SHUTDOWN_ANIM_IDLE, Ordering::Relaxed);
             let request = DRAG_RAISE_ANIMATION_PHASE.swap(DRAG_ANIM_IDLE, Ordering::Relaxed);
             let mut forced_frame: Option<PathBuf> = None;
 
-            match request {
+            if shutdown_request == SHUTDOWN_ANIM_REQUESTED {
+                if state_mut.shutdown_variants.is_empty() {
+                    SHUTDOWN_ANIMATION_FINISHED.store(true, Ordering::Relaxed);
+                } else {
+                    let variant_index = pseudo_random_index(state_mut.shutdown_variants.len());
+                    state_mut.shutdown_files = state_mut.shutdown_variants[variant_index].clone();
+                    state_mut.shutdown_index = 0;
+                    state_mut.playing_shutdown = true;
+                    state_mut.shutdown_hold_frame = state_mut.shutdown_files.first().cloned();
+                    forced_frame = state_mut.shutdown_hold_frame.clone();
+                }
+            }
+
+            if !state_mut.playing_shutdown {
+                match request {
                 DRAG_ANIM_START_REQUESTED => {
                     if !state_mut.drag_raise_start_files.is_empty() {
                         state_mut.drag_playback_mode = DragPlaybackMode::Start;
@@ -311,8 +381,26 @@ pub fn load_carousel_images(
                 }
                 _ => {}
             }
+            }
 
             if let Some(frame) = forced_frame {
+                frame
+            } else if state_mut.playing_shutdown {
+                let next_index = state_mut.shutdown_index + 1;
+                if next_index < state_mut.shutdown_files.len() {
+                    state_mut.shutdown_index = next_index;
+                    let frame = state_mut.shutdown_files[next_index].clone();
+                    state_mut.shutdown_hold_frame = Some(frame.clone());
+                    frame
+                } else {
+                    state_mut.playing_shutdown = false;
+                    SHUTDOWN_ANIMATION_FINISHED.store(true, Ordering::Relaxed);
+                    state_mut
+                        .shutdown_hold_frame
+                        .clone()
+                        .unwrap_or_else(|| state_mut.default_files[state_mut.default_index].clone())
+                }
+            } else if let Some(frame) = state_mut.shutdown_hold_frame.clone() {
                 frame
             } else if state_mut.drag_playback_mode == DragPlaybackMode::Start {
                 let next_index = state_mut.drag_raise_start_index + 1;

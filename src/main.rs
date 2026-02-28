@@ -8,13 +8,22 @@ use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, CssProvider, GestureClick, STYLE_PROVIDER_PRIORITY_APPLICATION};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use std::cell::RefCell;
+use std::process::Command;
 use std::rc::Rc;
+use std::time::Duration;
 
-use animation::load_carousel_images;
-use config::APP_ID;
+use animation::{is_shutdown_animation_finished, load_carousel_images, request_shutdown_animation};
+use config::{APP_ID, CAROUSEL_INTERVAL_MS};
 use drag::setup_long_press_drag;
 use input_region::{setup_context_menu, setup_image_input_region, setup_input_probe};
 use stats_panel::{PetStatsService, StatsPanel};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PendingSystemAction {
+    None,
+    Quit,
+    Restart,
+}
 
 fn main() {
     // GTK 应用主入口
@@ -87,11 +96,68 @@ fn build_ui(app: &Application) {
     {
         let stats_panel_for_panel_click = stats_panel.clone();
         let stats_panel_for_menu_popup = stats_panel.clone();
+        let app_for_quit = app.clone();
+        let pending_action = Rc::new(RefCell::new(PendingSystemAction::None));
+
+        let request_system_action = {
+            let pending_action = pending_action.clone();
+            let app_for_quit = app_for_quit.clone();
+            Rc::new(move |action: PendingSystemAction| {
+                if *pending_action.borrow() != PendingSystemAction::None {
+                    return;
+                }
+
+                *pending_action.borrow_mut() = action;
+                request_shutdown_animation();
+
+                let pending_action_for_timeout = pending_action.clone();
+                let app_for_timeout = app_for_quit.clone();
+                glib::timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
+                    if !is_shutdown_animation_finished() {
+                        return glib::ControlFlow::Continue;
+                    }
+
+                    let action = *pending_action_for_timeout.borrow();
+                    *pending_action_for_timeout.borrow_mut() = PendingSystemAction::None;
+
+                    if action == PendingSystemAction::Restart {
+                        match std::env::current_exe() {
+                            Ok(exe) => {
+                                if let Err(err) = Command::new(exe).spawn() {
+                                    eprintln!("重启失败：{}", err);
+                                }
+                            }
+                            Err(err) => {
+                                eprintln!("重启失败：无法获取当前可执行文件路径：{}", err);
+                            }
+                        }
+                    }
+
+                    app_for_timeout.quit();
+                    glib::ControlFlow::Break
+                });
+            })
+        };
+
+        let request_restart = {
+            let request_system_action = request_system_action.clone();
+            Rc::new(move || {
+                request_system_action(PendingSystemAction::Restart);
+            })
+        };
+
+        let request_quit = {
+            let request_system_action = request_system_action.clone();
+            Rc::new(move || {
+                request_system_action(PendingSystemAction::Quit);
+            })
+        };
+
         setup_context_menu(&image, Rc::new(move |x, y| {
             stats_panel_for_panel_click.toggle_at(x, y);
         }), Rc::new(move || {
             stats_panel_for_menu_popup.hide();
-        }));
+        }), request_restart, request_quit);
     }
 
     let dismiss_panel_click = GestureClick::new();
