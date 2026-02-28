@@ -12,3 +12,5 @@
 2026.2.28 17:12 :exit option and better animation when normal.
 2026.2.28 17:23 :Add close animation.
 2026.2.28 18:32 :restart and close option.
+2026.2.28 18:45 :add config.toml.
+2026.2.28 18:58 :add pinch animation.

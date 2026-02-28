@@ -17,15 +17,28 @@ const DRAG_ANIM_IDLE: u8 = 0;
 const DRAG_ANIM_START_REQUESTED: u8 = 1;
 const DRAG_ANIM_LOOP_REQUESTED: u8 = 2;
 const DRAG_ANIM_END_REQUESTED: u8 = 3;
+const PINCH_ANIM_IDLE: u8 = 0;
+const PINCH_ANIM_START_REQUESTED: u8 = 1;
+const PINCH_ANIM_LOOP_REQUESTED: u8 = 2;
+const PINCH_ANIM_END_REQUESTED: u8 = 3;
 const SHUTDOWN_ANIM_IDLE: u8 = 0;
 const SHUTDOWN_ANIM_REQUESTED: u8 = 1;
 
 static DRAG_RAISE_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(DRAG_ANIM_IDLE);
+static PINCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(PINCH_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(SHUTDOWN_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_FINISHED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DragPlaybackMode {
+    None,
+    Start,
+    Loop,
+    End,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PinchPlaybackMode {
     None,
     Start,
     Loop,
@@ -42,6 +55,14 @@ pub fn request_drag_raise_animation_loop() {
 
 pub fn request_drag_raise_animation_end() {
     DRAG_RAISE_ANIMATION_PHASE.store(DRAG_ANIM_END_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_pinch_animation_start() {
+    PINCH_ANIMATION_PHASE.store(PINCH_ANIM_START_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_pinch_animation_end() {
+    PINCH_ANIMATION_PHASE.store(PINCH_ANIM_END_REQUESTED, Ordering::Relaxed);
 }
 
 pub fn request_shutdown_animation() {
@@ -215,6 +236,40 @@ fn collect_drag_raise_end_variants(raise_static_root: &Path) -> Vec<Vec<PathBuf>
         .collect()
 }
 
+fn collect_pinch_start_files(animation_config: &AnimationPathConfig) -> Vec<PathBuf> {
+    collect_png_files(&body_asset_path(
+        &animation_config.assets_body_root,
+        "Pinch/Happy/A",
+    ))
+    .unwrap_or_default()
+}
+
+fn collect_pinch_loop_variants(animation_config: &AnimationPathConfig) -> Vec<Vec<PathBuf>> {
+    ["Pinch/Happy/B", "Pinch/Happy/B_2"]
+        .iter()
+        .filter_map(|relative_dir| {
+            let files = collect_png_files(&body_asset_path(
+                &animation_config.assets_body_root,
+                relative_dir,
+            ))
+            .ok()?;
+            if files.is_empty() {
+                None
+            } else {
+                Some(files)
+            }
+        })
+        .collect()
+}
+
+fn collect_pinch_end_files(animation_config: &AnimationPathConfig) -> Vec<PathBuf> {
+    collect_png_files(&body_asset_path(
+        &animation_config.assets_body_root,
+        "Pinch/Happy/C",
+    ))
+    .unwrap_or_default()
+}
+
 fn collect_shutdown_variants(animation_config: &AnimationPathConfig) -> Vec<Vec<PathBuf>> {
     animation_config
         .shutdown_variants
@@ -258,6 +313,14 @@ struct CarouselState {
     drag_raise_end_variants: Vec<Vec<PathBuf>>,
     drag_raise_end_files: Vec<PathBuf>,
     drag_raise_end_index: usize,
+    pinch_start_files: Vec<PathBuf>,
+    pinch_start_index: usize,
+    pinch_loop_variants: Vec<Vec<PathBuf>>,
+    pinch_loop_files: Vec<PathBuf>,
+    pinch_loop_index: usize,
+    pinch_end_files: Vec<PathBuf>,
+    pinch_end_index: usize,
+    pinch_playback_mode: PinchPlaybackMode,
     shutdown_variants: Vec<Vec<PathBuf>>,
     shutdown_files: Vec<PathBuf>,
     shutdown_index: usize,
@@ -294,6 +357,9 @@ pub fn load_carousel_images(
     );
     let drag_raise_start_files = collect_drag_raise_start_files(&drag_raise_static_dir);
     let drag_raise_end_variants = collect_drag_raise_end_variants(&drag_raise_static_dir);
+    let pinch_start_files = collect_pinch_start_files(&animation_config);
+    let pinch_loop_variants = collect_pinch_loop_variants(&animation_config);
+    let pinch_end_files = collect_pinch_end_files(&animation_config);
     let shutdown_variants = collect_shutdown_variants(&animation_config);
 
     let image = Image::new();
@@ -311,6 +377,14 @@ pub fn load_carousel_images(
         drag_raise_end_variants,
         drag_raise_end_files: Vec::new(),
         drag_raise_end_index: 0,
+        pinch_start_files,
+        pinch_start_index: 0,
+        pinch_loop_variants,
+        pinch_loop_files: Vec::new(),
+        pinch_loop_index: 0,
+        pinch_end_files,
+        pinch_end_index: 0,
+        pinch_playback_mode: PinchPlaybackMode::None,
         shutdown_variants,
         shutdown_files: Vec::new(),
         shutdown_index: 0,
@@ -343,7 +417,8 @@ pub fn load_carousel_images(
             let mut state_mut = state_clone.borrow_mut();
             let shutdown_request =
                 SHUTDOWN_ANIMATION_PHASE.swap(SHUTDOWN_ANIM_IDLE, Ordering::Relaxed);
-            let request = DRAG_RAISE_ANIMATION_PHASE.swap(DRAG_ANIM_IDLE, Ordering::Relaxed);
+            let drag_request = DRAG_RAISE_ANIMATION_PHASE.swap(DRAG_ANIM_IDLE, Ordering::Relaxed);
+            let pinch_request = PINCH_ANIMATION_PHASE.swap(PINCH_ANIM_IDLE, Ordering::Relaxed);
             let mut forced_frame: Option<PathBuf> = None;
 
             if shutdown_request == SHUTDOWN_ANIM_REQUESTED {
@@ -360,7 +435,7 @@ pub fn load_carousel_images(
             }
 
             if !state_mut.playing_shutdown {
-                match request {
+                match drag_request {
                 DRAG_ANIM_START_REQUESTED => {
                     if !state_mut.drag_raise_start_files.is_empty() {
                         state_mut.drag_playback_mode = DragPlaybackMode::Start;
@@ -396,6 +471,52 @@ pub fn load_carousel_images(
                     }
                 }
                 _ => {}
+            }
+
+            let drag_is_playing = state_mut.drag_playback_mode != DragPlaybackMode::None;
+            if !drag_is_playing {
+                match pinch_request {
+                    PINCH_ANIM_START_REQUESTED => {
+                        if !state_mut.pinch_start_files.is_empty() {
+                            state_mut.pinch_playback_mode = PinchPlaybackMode::Start;
+                            state_mut.pinch_start_index = 0;
+                            forced_frame = Some(state_mut.pinch_start_files[0].clone());
+                        } else if !state_mut.pinch_loop_variants.is_empty() {
+                            let variant_index = pseudo_random_index(state_mut.pinch_loop_variants.len());
+                            state_mut.pinch_loop_files = state_mut.pinch_loop_variants[variant_index].clone();
+                            state_mut.pinch_loop_index = 0;
+                            state_mut.pinch_playback_mode = PinchPlaybackMode::Loop;
+                            forced_frame = state_mut.pinch_loop_files.first().cloned();
+                        }
+                    }
+                    PINCH_ANIM_LOOP_REQUESTED => {
+                        if state_mut.pinch_playback_mode != PinchPlaybackMode::Start
+                            && !state_mut.pinch_loop_variants.is_empty()
+                        {
+                            if state_mut.pinch_playback_mode != PinchPlaybackMode::Loop
+                                || state_mut.pinch_loop_files.is_empty()
+                            {
+                                let variant_index =
+                                    pseudo_random_index(state_mut.pinch_loop_variants.len());
+                                state_mut.pinch_loop_files =
+                                    state_mut.pinch_loop_variants[variant_index].clone();
+                                state_mut.pinch_loop_index = 0;
+                                forced_frame = state_mut.pinch_loop_files.first().cloned();
+                            }
+                            state_mut.pinch_playback_mode = PinchPlaybackMode::Loop;
+                        }
+                    }
+                    PINCH_ANIM_END_REQUESTED => {
+                        if !state_mut.pinch_end_files.is_empty() {
+                            state_mut.pinch_playback_mode = PinchPlaybackMode::End;
+                            state_mut.pinch_end_index = 0;
+                            forced_frame = Some(state_mut.pinch_end_files[0].clone());
+                        } else {
+                            state_mut.pinch_playback_mode = PinchPlaybackMode::None;
+                        }
+                    }
+                    _ => {}
+                }
             }
             }
 
@@ -444,6 +565,55 @@ pub fn load_carousel_images(
                     state_mut.drag_raise_end_files[next_index].clone()
                 } else {
                     state_mut.drag_playback_mode = DragPlaybackMode::None;
+                    if state_mut.playing_startup {
+                        state_mut.startup_files[state_mut.startup_index].clone()
+                    } else {
+                        state_mut.default_files[state_mut.default_index].clone()
+                    }
+                }
+            } else if state_mut.pinch_playback_mode == PinchPlaybackMode::Start {
+                let next_index = state_mut.pinch_start_index + 1;
+                if next_index < state_mut.pinch_start_files.len() {
+                    state_mut.pinch_start_index = next_index;
+                    state_mut.pinch_start_files[next_index].clone()
+                } else if !state_mut.pinch_loop_variants.is_empty() {
+                    let variant_index = pseudo_random_index(state_mut.pinch_loop_variants.len());
+                    state_mut.pinch_loop_files = state_mut.pinch_loop_variants[variant_index].clone();
+                    state_mut.pinch_loop_index = 0;
+                    state_mut.pinch_playback_mode = PinchPlaybackMode::Loop;
+                    state_mut
+                        .pinch_loop_files
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| state_mut.default_files[state_mut.default_index].clone())
+                } else {
+                    state_mut.pinch_playback_mode = PinchPlaybackMode::None;
+                    state_mut.default_files[state_mut.default_index].clone()
+                }
+            } else if state_mut.pinch_playback_mode == PinchPlaybackMode::Loop
+                && !state_mut.pinch_loop_files.is_empty()
+            {
+                let next_index = state_mut.pinch_loop_index + 1;
+                if next_index < state_mut.pinch_loop_files.len() {
+                    state_mut.pinch_loop_index = next_index;
+                    state_mut.pinch_loop_files[next_index].clone()
+                } else {
+                    let variant_index = pseudo_random_index(state_mut.pinch_loop_variants.len());
+                    state_mut.pinch_loop_files = state_mut.pinch_loop_variants[variant_index].clone();
+                    state_mut.pinch_loop_index = 0;
+                    state_mut
+                        .pinch_loop_files
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| state_mut.default_files[state_mut.default_index].clone())
+                }
+            } else if state_mut.pinch_playback_mode == PinchPlaybackMode::End {
+                let next_index = state_mut.pinch_end_index + 1;
+                if next_index < state_mut.pinch_end_files.len() {
+                    state_mut.pinch_end_index = next_index;
+                    state_mut.pinch_end_files[next_index].clone()
+                } else {
+                    state_mut.pinch_playback_mode = PinchPlaybackMode::None;
                     if state_mut.playing_startup {
                         state_mut.startup_files[state_mut.startup_index].clone()
                     } else {

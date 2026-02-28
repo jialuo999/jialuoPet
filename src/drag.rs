@@ -7,12 +7,18 @@ use std::time::{Duration, Instant};
 
 use crate::animation::{
     request_drag_raise_animation_end, request_drag_raise_animation_loop,
-    request_drag_raise_animation_start,
+    request_drag_raise_animation_start, request_pinch_animation_end,
+    request_pinch_animation_start,
 };
 use crate::config::{DRAG_ALLOW_OFFSCREEN, DRAG_LONG_PRESS_MS};
 
 const DRAG_FOCUS_PIXEL_X: i32 = 581;
 const DRAG_FOCUS_PIXEL_Y: i32 = 257;
+const PINCH_RECT_X1: i32 = 518;
+const PINCH_RECT_Y1: i32 = 403;
+const PINCH_RECT_X2: i32 = 338;
+const PINCH_RECT_Y2: i32 = 223;
+const PINCH_MOVE_THRESHOLD: f64 = 8.0;
 
 fn focus_pixel_in_widget(
     image: &Image,
@@ -38,6 +44,55 @@ fn focus_pixel_in_widget(
     (clamped_x, clamped_y)
 }
 
+fn map_point_to_pixbuf(
+    image: &Image,
+    current_pixbuf: &Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+    pointer_x: f64,
+    pointer_y: f64,
+) -> Option<(i32, i32)> {
+    let alloc = image.allocation();
+    if alloc.width() <= 0 || alloc.height() <= 0 {
+        return None;
+    }
+
+    let local_x = pointer_x - alloc.x() as f64;
+    let local_y = pointer_y - alloc.y() as f64;
+    if local_x < 0.0
+        || local_y < 0.0
+        || local_x >= alloc.width() as f64
+        || local_y >= alloc.height() as f64
+    {
+        return None;
+    }
+
+    let binding = current_pixbuf.borrow();
+    let pixbuf = binding.as_ref()?;
+    let pixbuf_w = pixbuf.width().max(1) as f64;
+    let pixbuf_h = pixbuf.height().max(1) as f64;
+
+    let source_x = (local_x * pixbuf_w / alloc.width().max(1) as f64).floor() as i32;
+    let source_y = (local_y * pixbuf_h / alloc.height().max(1) as f64).floor() as i32;
+    Some((source_x, source_y))
+}
+
+fn is_in_pinch_rect(
+    image: &Image,
+    current_pixbuf: &Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+    pointer_x: f64,
+    pointer_y: f64,
+) -> bool {
+    let Some((source_x, source_y)) = map_point_to_pixbuf(image, current_pixbuf, pointer_x, pointer_y) else {
+        return false;
+    };
+
+    let min_x = PINCH_RECT_X1.min(PINCH_RECT_X2);
+    let max_x = PINCH_RECT_X1.max(PINCH_RECT_X2);
+    let min_y = PINCH_RECT_Y1.min(PINCH_RECT_Y2);
+    let max_y = PINCH_RECT_Y1.max(PINCH_RECT_Y2);
+
+    (min_x..=max_x).contains(&source_x) && (min_y..=max_y).contains(&source_y)
+}
+
 pub fn setup_long_press_drag(
     window: &ApplicationWindow,
     image: &Image,
@@ -48,6 +103,9 @@ pub fn setup_long_press_drag(
         is_pressed: bool,
         press_at: Option<Instant>,
         drag_enabled: bool,
+        moved_significantly: bool,
+        press_in_pinch_rect: bool,
+        pinch_active: bool,
         drag_start_x: f64,
         drag_start_y: f64,
         start_left_margin: i32,
@@ -60,6 +118,9 @@ pub fn setup_long_press_drag(
                 is_pressed: false,
                 press_at: None,
                 drag_enabled: false,
+                moved_significantly: false,
+                press_in_pinch_rect: false,
+                pinch_active: false,
                 drag_start_x: 0.0,
                 drag_start_y: 0.0,
                 start_left_margin: 0,
@@ -74,11 +135,31 @@ pub fn setup_long_press_drag(
     click.set_button(1);
     {
         let state = state.clone();
-        click.connect_pressed(move |_, _, _, _| {
+        let image = image.clone();
+        let current_pixbuf = current_pixbuf.clone();
+        click.connect_pressed(move |_, _, press_x, press_y| {
             let mut drag_state = state.borrow_mut();
             drag_state.is_pressed = true;
             drag_state.press_at = Some(Instant::now());
             drag_state.drag_enabled = false;
+            drag_state.moved_significantly = false;
+            drag_state.press_in_pinch_rect =
+                is_in_pinch_rect(&image, &current_pixbuf, press_x, press_y);
+            drag_state.pinch_active = false;
+
+            let state_for_timer = state.clone();
+            glib::timeout_add_local_once(Duration::from_millis(DRAG_LONG_PRESS_MS), move || {
+                let mut drag_state = state_for_timer.borrow_mut();
+                if drag_state.is_pressed
+                    && !drag_state.drag_enabled
+                    && !drag_state.moved_significantly
+                    && drag_state.press_in_pinch_rect
+                    && !drag_state.pinch_active
+                {
+                    drag_state.pinch_active = true;
+                    request_pinch_animation_start();
+                }
+            });
         });
     }
     {
@@ -86,11 +167,18 @@ pub fn setup_long_press_drag(
         click.connect_released(move |_, _, _, _| {
             let mut drag_state = state.borrow_mut();
             let was_dragging = drag_state.drag_enabled;
+            let was_pinching = drag_state.pinch_active;
             drag_state.is_pressed = false;
             drag_state.press_at = None;
             drag_state.drag_enabled = false;
+            drag_state.moved_significantly = false;
+            drag_state.press_in_pinch_rect = false;
+            drag_state.pinch_active = false;
             if was_dragging {
                 request_drag_raise_animation_end();
+            }
+            if was_pinching {
+                request_pinch_animation_end();
             }
         });
     }
@@ -115,6 +203,14 @@ pub fn setup_long_press_drag(
             let mut drag_state = state.borrow_mut();
             if !drag_state.is_pressed {
                 return;
+            }
+
+            if drag_state.pinch_active {
+                return;
+            }
+
+            if offset_x.abs() >= PINCH_MOVE_THRESHOLD || offset_y.abs() >= PINCH_MOVE_THRESHOLD {
+                drag_state.moved_significantly = true;
             }
 
             if !drag_state.drag_enabled {
@@ -209,9 +305,14 @@ pub fn setup_long_press_drag(
         drag.connect_drag_end(move |_, _, _| {
             let mut drag_state = state.borrow_mut();
             let was_dragging = drag_state.drag_enabled;
+            let was_pinching = drag_state.pinch_active;
             drag_state.drag_enabled = false;
+            drag_state.pinch_active = false;
             if was_dragging {
                 request_drag_raise_animation_end();
+            }
+            if was_pinching {
+                request_pinch_animation_end();
             }
         });
     }
