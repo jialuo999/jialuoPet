@@ -5,7 +5,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use crate::animation::set_drag_raise_animation_active;
+use crate::animation::{
+    request_drag_raise_animation_end, request_drag_raise_animation_loop,
+    request_drag_raise_animation_start,
+};
 use crate::config::{DRAG_ALLOW_OFFSCREEN, DRAG_LONG_PRESS_MS};
 
 const DRAG_FOCUS_PIXEL_X: i32 = 581;
@@ -76,17 +79,19 @@ pub fn setup_long_press_drag(
             drag_state.is_pressed = true;
             drag_state.press_at = Some(Instant::now());
             drag_state.drag_enabled = false;
-            set_drag_raise_animation_active(false);
         });
     }
     {
         let state = state.clone();
         click.connect_released(move |_, _, _, _| {
             let mut drag_state = state.borrow_mut();
+            let was_dragging = drag_state.drag_enabled;
             drag_state.is_pressed = false;
             drag_state.press_at = None;
             drag_state.drag_enabled = false;
-            set_drag_raise_animation_active(false);
+            if was_dragging {
+                request_drag_raise_animation_end();
+            }
         });
     }
     window.add_controller(click);
@@ -183,8 +188,10 @@ pub fn setup_long_press_drag(
                 drag_state.start_left_margin = aligned_left;
                 drag_state.start_top_margin = aligned_top;
                 drag_state.drag_enabled = true;
-                set_drag_raise_animation_active(true);
+                request_drag_raise_animation_start();
             }
+
+            request_drag_raise_animation_loop();
 
             let left = drag_state.start_left_margin + offset_x.round() as i32;
             let top = drag_state.start_top_margin + offset_y.round() as i32;
@@ -200,8 +207,12 @@ pub fn setup_long_press_drag(
     {
         let state = state.clone();
         drag.connect_drag_end(move |_, _, _| {
-            state.borrow_mut().drag_enabled = false;
-            set_drag_raise_animation_active(false);
+            let mut drag_state = state.borrow_mut();
+            let was_dragging = drag_state.drag_enabled;
+            drag_state.drag_enabled = false;
+            if was_dragging {
+                request_drag_raise_animation_end();
+            }
         });
     }
     window.add_controller(drag);

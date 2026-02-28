@@ -4,17 +4,50 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{CAROUSEL_INTERVAL_MS, STARTUP_EXCLUDED_DIRS};
 use crate::input_region::setup_image_input_region;
 
-static DRAG_RAISE_ANIMATION_ACTIVE: AtomicBool = AtomicBool::new(false);
+const DRAG_ANIM_IDLE: u8 = 0;
+const DRAG_ANIM_START_REQUESTED: u8 = 1;
+const DRAG_ANIM_LOOP_REQUESTED: u8 = 2;
+const DRAG_ANIM_END_REQUESTED: u8 = 3;
 
-pub fn set_drag_raise_animation_active(active: bool) {
-    DRAG_RAISE_ANIMATION_ACTIVE.store(active, Ordering::Relaxed);
+static DRAG_RAISE_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(DRAG_ANIM_IDLE);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DragPlaybackMode {
+    None,
+    Start,
+    Loop,
+    End,
+}
+
+pub fn request_drag_raise_animation_start() {
+    DRAG_RAISE_ANIMATION_PHASE.store(DRAG_ANIM_START_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_drag_raise_animation_loop() {
+    DRAG_RAISE_ANIMATION_PHASE.store(DRAG_ANIM_LOOP_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_drag_raise_animation_end() {
+    DRAG_RAISE_ANIMATION_PHASE.store(DRAG_ANIM_END_REQUESTED, Ordering::Relaxed);
+}
+
+fn pseudo_random_index(len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as usize;
+    seed % len
 }
 
 fn collect_png_files(asset_dir: &Path) -> Result<Vec<PathBuf>, String> {
@@ -130,11 +163,7 @@ fn choose_startup_animation_files(startup_root: &Path) -> Option<Vec<PathBuf>> {
         return None;
     }
 
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as usize;
-    let selected_index = seed % available_variants.len();
+    let selected_index = pseudo_random_index(available_variants.len());
     Some(available_variants.swap_remove(selected_index))
 }
 
@@ -148,13 +177,38 @@ fn collect_drag_raise_happy_files(raise_dynamic_root: &Path) -> Vec<PathBuf> {
     Vec::new()
 }
 
+fn collect_drag_raise_start_files(raise_static_root: &Path) -> Vec<PathBuf> {
+    collect_png_files(&raise_static_root.join("A_Happy")).unwrap_or_default()
+}
+
+fn collect_drag_raise_end_variants(raise_static_root: &Path) -> Vec<Vec<PathBuf>> {
+    let end_dirs = ["C_Happy", "C_Happy_2"];
+    end_dirs
+        .iter()
+        .filter_map(|name| {
+            let files = collect_png_files(&raise_static_root.join(name)).ok()?;
+            if files.is_empty() {
+                None
+            } else {
+                Some(files)
+            }
+        })
+        .collect()
+}
+
 struct CarouselState {
     startup_files: Vec<PathBuf>,
     startup_index: usize,
     default_files: Vec<PathBuf>,
     default_index: usize,
-    drag_raise_files: Vec<PathBuf>,
-    drag_raise_index: usize,
+    drag_raise_start_files: Vec<PathBuf>,
+    drag_raise_start_index: usize,
+    drag_raise_loop_files: Vec<PathBuf>,
+    drag_raise_loop_index: usize,
+    drag_raise_end_variants: Vec<Vec<PathBuf>>,
+    drag_raise_end_files: Vec<PathBuf>,
+    drag_raise_end_index: usize,
+    drag_playback_mode: DragPlaybackMode,
     playing_startup: bool,
 }
 
@@ -172,7 +226,10 @@ pub fn load_carousel_images(
     let startup_files = choose_startup_animation_files(&startup_root).unwrap_or_default();
     let playing_startup = !startup_files.is_empty();
     let drag_raise_dir = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/Raise/Raised_Dynamic");
-    let drag_raise_files = collect_drag_raise_happy_files(&drag_raise_dir);
+    let drag_raise_loop_files = collect_drag_raise_happy_files(&drag_raise_dir);
+    let drag_raise_static_dir = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/Raise/Raised_Static");
+    let drag_raise_start_files = collect_drag_raise_start_files(&drag_raise_static_dir);
+    let drag_raise_end_variants = collect_drag_raise_end_variants(&drag_raise_static_dir);
 
     let image = Image::new();
     image.set_pixel_size(256);
@@ -182,8 +239,14 @@ pub fn load_carousel_images(
         startup_index: 0,
         default_files,
         default_index: 0,
-        drag_raise_files,
-        drag_raise_index: 0,
+        drag_raise_start_files,
+        drag_raise_start_index: 0,
+        drag_raise_loop_files,
+        drag_raise_loop_index: 0,
+        drag_raise_end_variants,
+        drag_raise_end_files: Vec::new(),
+        drag_raise_end_index: 0,
+        drag_playback_mode: DragPlaybackMode::None,
         playing_startup,
     }));
     let state_clone = state.clone();
@@ -208,11 +271,81 @@ pub fn load_carousel_images(
     timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
         let next_path = {
             let mut state_mut = state_clone.borrow_mut();
-            let dragging = DRAG_RAISE_ANIMATION_ACTIVE.load(Ordering::Relaxed);
-            if dragging && !state_mut.drag_raise_files.is_empty() {
-                let next_index = (state_mut.drag_raise_index + 1) % state_mut.drag_raise_files.len();
-                state_mut.drag_raise_index = next_index;
-                state_mut.drag_raise_files[next_index].clone()
+            let request = DRAG_RAISE_ANIMATION_PHASE.swap(DRAG_ANIM_IDLE, Ordering::Relaxed);
+            let mut forced_frame: Option<PathBuf> = None;
+
+            match request {
+                DRAG_ANIM_START_REQUESTED => {
+                    if !state_mut.drag_raise_start_files.is_empty() {
+                        state_mut.drag_playback_mode = DragPlaybackMode::Start;
+                        state_mut.drag_raise_start_index = 0;
+                        forced_frame = Some(state_mut.drag_raise_start_files[0].clone());
+                    } else if !state_mut.drag_raise_loop_files.is_empty() {
+                        state_mut.drag_playback_mode = DragPlaybackMode::Loop;
+                        state_mut.drag_raise_loop_index = 0;
+                        forced_frame = Some(state_mut.drag_raise_loop_files[0].clone());
+                    }
+                }
+                DRAG_ANIM_LOOP_REQUESTED => {
+                    if state_mut.drag_playback_mode != DragPlaybackMode::Start
+                        && !state_mut.drag_raise_loop_files.is_empty()
+                    {
+                        if state_mut.drag_playback_mode != DragPlaybackMode::Loop {
+                            state_mut.drag_raise_loop_index = 0;
+                            forced_frame = Some(state_mut.drag_raise_loop_files[0].clone());
+                        }
+                        state_mut.drag_playback_mode = DragPlaybackMode::Loop;
+                    }
+                }
+                DRAG_ANIM_END_REQUESTED => {
+                    if !state_mut.drag_raise_end_variants.is_empty() {
+                        let variant_index = pseudo_random_index(state_mut.drag_raise_end_variants.len());
+                        state_mut.drag_raise_end_files =
+                            state_mut.drag_raise_end_variants[variant_index].clone();
+                        state_mut.drag_raise_end_index = 0;
+                        state_mut.drag_playback_mode = DragPlaybackMode::End;
+                        forced_frame = state_mut.drag_raise_end_files.first().cloned();
+                    } else {
+                        state_mut.drag_playback_mode = DragPlaybackMode::None;
+                    }
+                }
+                _ => {}
+            }
+
+            if let Some(frame) = forced_frame {
+                frame
+            } else if state_mut.drag_playback_mode == DragPlaybackMode::Start {
+                let next_index = state_mut.drag_raise_start_index + 1;
+                if next_index < state_mut.drag_raise_start_files.len() {
+                    state_mut.drag_raise_start_index = next_index;
+                    state_mut.drag_raise_start_files[next_index].clone()
+                } else if !state_mut.drag_raise_loop_files.is_empty() {
+                    state_mut.drag_playback_mode = DragPlaybackMode::Loop;
+                    state_mut.drag_raise_loop_index = 0;
+                    state_mut.drag_raise_loop_files[0].clone()
+                } else {
+                    state_mut.drag_playback_mode = DragPlaybackMode::None;
+                    state_mut.default_files[state_mut.default_index].clone()
+                }
+            } else if state_mut.drag_playback_mode == DragPlaybackMode::Loop
+                && !state_mut.drag_raise_loop_files.is_empty()
+            {
+                let next_index = (state_mut.drag_raise_loop_index + 1) % state_mut.drag_raise_loop_files.len();
+                state_mut.drag_raise_loop_index = next_index;
+                state_mut.drag_raise_loop_files[next_index].clone()
+            } else if state_mut.drag_playback_mode == DragPlaybackMode::End {
+                let next_index = state_mut.drag_raise_end_index + 1;
+                if next_index < state_mut.drag_raise_end_files.len() {
+                    state_mut.drag_raise_end_index = next_index;
+                    state_mut.drag_raise_end_files[next_index].clone()
+                } else {
+                    state_mut.drag_playback_mode = DragPlaybackMode::None;
+                    if state_mut.playing_startup {
+                        state_mut.startup_files[state_mut.startup_index].clone()
+                    } else {
+                        state_mut.default_files[state_mut.default_index].clone()
+                    }
+                }
             } else if state_mut.playing_startup {
                 let next_startup_index = state_mut.startup_index + 1;
                 if next_startup_index < state_mut.startup_files.len() {
