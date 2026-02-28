@@ -78,7 +78,7 @@ fn build_ui(app: &Application) {
     // 诊断：记录窗口/图片是否收到点击事件
     setup_input_probe(&window, &image);
     // 长按图片不透明区域后可拖动窗口位置
-    setup_long_press_drag(&window);
+    setup_long_press_drag(&window, &image, current_pixbuf.clone());
     
     window.present();
 
