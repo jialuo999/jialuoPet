@@ -5,6 +5,25 @@ use std::rc::Rc;
 
 use crate::config::PanelDebugConfig;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PetMode {
+    Happy,
+    Nomal,
+    PoorCondition,
+    Ill,
+}
+
+impl PetMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            PetMode::Happy => "Happy",
+            PetMode::Nomal => "Nomal",
+            PetMode::PoorCondition => "PoorCondition",
+            PetMode::Ill => "Ill",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct PetStats {
     pub stamina: u32,
@@ -83,6 +102,53 @@ impl PetStatsService {
 
     pub fn snapshot(&self) -> PetStats {
         self.inner.borrow().clone()
+    }
+
+    pub fn cal_mode(&self) -> PetMode {
+        let stats = self.inner.borrow();
+        let feeling_max = self.basic_stat_max().max(1);
+        let feeling = stats.mood.min(feeling_max);
+        let health = stats.health.min(feeling_max);
+        let likability = stats.affinity.min(feeling_max);
+
+        let feeling_percent = feeling * 100 / feeling_max;
+        let mut realhel: i32 = 60;
+        if feeling_percent >= 80 {
+            realhel -= 12;
+        }
+        if likability >= 80 {
+            realhel -= 12;
+        } else if likability >= 40 {
+            realhel -= 6;
+        }
+        realhel = realhel.max(0);
+
+        let health_i32 = health as i32;
+        if health_i32 <= realhel {
+            return if health_i32 <= realhel / 2 {
+                PetMode::Ill
+            } else {
+                PetMode::PoorCondition
+            };
+        }
+
+        let realfel = 0.90
+            - if likability >= 80 {
+                0.20
+            } else if likability >= 40 {
+                0.10
+            } else {
+                0.0
+            };
+        let felps = feeling as f64 / feeling_max as f64;
+
+        if felps >= realfel {
+            PetMode::Happy
+        } else if felps <= realfel / 2.0 {
+            PetMode::PoorCondition
+        } else {
+            PetMode::Nomal
+        }
     }
 
     #[allow(dead_code)]
@@ -174,6 +240,7 @@ pub struct StatsPanel {
     experience_value: Label,
     level_bar: ProgressBar,
     level_value: Label,
+    mode_value: Label,
 }
 
 impl StatsPanel {
@@ -193,6 +260,17 @@ impl StatsPanel {
         let title = Label::new(Some("角色健康系统"));
         title.set_halign(Align::Start);
         root.append(&title);
+
+        let mode_row = Box::new(Orientation::Horizontal, 6);
+        let mode_title = Label::new(Some("状态"));
+        mode_title.set_halign(Align::Start);
+        mode_title.set_width_chars(6);
+        let mode_value = Label::new(None);
+        mode_value.set_halign(Align::End);
+        mode_value.set_hexpand(true);
+        mode_row.append(&mode_title);
+        mode_row.append(&mode_value);
+        root.append(&mode_row);
 
         let (stamina_row, stamina_bar, stamina_value) = build_stat_row("体力");
         let (satiety_row, satiety_bar, satiety_value) = build_stat_row("饱腹度");
@@ -233,6 +311,7 @@ impl StatsPanel {
             experience_value,
             level_bar,
             level_value,
+            mode_value,
         };
 
         panel.refresh();
@@ -260,6 +339,7 @@ impl StatsPanel {
 
     pub fn refresh(&self) {
         let stats = self.stats_service.snapshot();
+        let mode = self.stats_service.cal_mode();
         let basic_stat_max = self.stats_service.basic_stat_max();
         let experience_max = self.stats_service.experience_max();
         let level_max = self.stats_service.level_max();
@@ -301,6 +381,7 @@ impl StatsPanel {
             experience_max,
         );
         set_bar_value(&self.level_bar, &self.level_value, stats.level, level_max);
+        self.mode_value.set_text(mode.label());
     }
 }
 

@@ -6,12 +6,12 @@ level_max = 100
 
 # 面板默认值（配置热更新时会立即应用）
 default_stamina = 80
-default_satiety = 70
-default_thirst = 65
-default_mood = 75
-default_health = 90
+default_satiety = 7
+default_thirst = 6
+default_mood = 100
+default_health = 100
 default_affinity = 50
-default_experience = 10
+default_experience = 100
 default_level = 78
 
 [animation]
@@ -24,14 +24,15 @@ default_happy_idle_variants = [
 	"Default/Happy/2",
 	"Default/Happy/3",
 ]
+default_nomal_idle_root = "Default/Nomal"
+default_poor_condition_idle_root = "Default/PoorCondition"
+default_ill_idle_root = "Default/Ill"
 
 # 启动与拖拽动画目录
 startup_root = "StartUP"
 raise_dynamic_root = "Raise/Raised_Dynamic"
 raise_static_root = "Raise/Raised_Static"
 
-# 关机动画候选目录
-shutdown_variants = [
-	"Shutdown/2/Happy",
-	"Shutdown/Happy_1",
-]
+# 命名规划根目录（按 Happy/Nomal/PoorCondition/Ill 匹配）
+pinch_root = "Pinch"
+shutdown_root = "Shutdown"

@@ -11,7 +11,6 @@ pub const CAROUSEL_INTERVAL_MS: u64 = 130;
 pub const INPUT_DEBUG_LOG: bool = false;
 pub const DRAG_LONG_PRESS_MS: u64 = 450;
 pub const DRAG_ALLOW_OFFSCREEN: bool = true;
-pub const STARTUP_EXCLUDED_DIRS: &[&str] = &["PoorCondition", "Ill"];
 
 pub const ASSETS_BODY_ROOT: &str = "assets/body";
 pub const DEFAULT_HAPPY_IDLE_VARIANTS: &[&str] = &[
@@ -19,13 +18,14 @@ pub const DEFAULT_HAPPY_IDLE_VARIANTS: &[&str] = &[
 	"Default/Happy/2",
 	"Default/Happy/3",
 ];
+pub const DEFAULT_NOMAL_IDLE_ROOT: &str = "Default/Nomal";
+pub const DEFAULT_POOR_CONDITION_IDLE_ROOT: &str = "Default/PoorCondition";
+pub const DEFAULT_ILL_IDLE_ROOT: &str = "Default/Ill";
 pub const STARTUP_ROOT: &str = "StartUP";
 pub const RAISE_DYNAMIC_ROOT: &str = "Raise/Raised_Dynamic";
 pub const RAISE_STATIC_ROOT: &str = "Raise/Raised_Static";
-pub const SHUTDOWN_VARIANTS: &[&str] = &[
-	"Shutdown/2/Happy",
-	"Shutdown/Happy_1",
-];
+pub const PINCH_ROOT: &str = "Pinch";
+pub const SHUTDOWN_ROOT: &str = "Shutdown";
 
 // 调试：面板数值控制
 pub const PANEL_BASIC_STAT_MAX: u32 = 100;
@@ -162,10 +162,14 @@ impl PanelDebugConfigPartial {
 pub struct AnimationPathConfig {
 	pub assets_body_root: String,
 	pub default_happy_idle_variants: Vec<String>,
+	pub default_nomal_idle_root: String,
+	pub default_poor_condition_idle_root: String,
+	pub default_ill_idle_root: String,
 	pub startup_root: String,
 	pub raise_dynamic_root: String,
 	pub raise_static_root: String,
-	pub shutdown_variants: Vec<String>,
+	pub pinch_root: String,
+	pub shutdown_root: String,
 }
 
 impl Default for AnimationPathConfig {
@@ -176,13 +180,14 @@ impl Default for AnimationPathConfig {
 				.iter()
 				.map(|value| (*value).to_string())
 				.collect(),
+			default_nomal_idle_root: DEFAULT_NOMAL_IDLE_ROOT.to_string(),
+			default_poor_condition_idle_root: DEFAULT_POOR_CONDITION_IDLE_ROOT.to_string(),
+			default_ill_idle_root: DEFAULT_ILL_IDLE_ROOT.to_string(),
 			startup_root: STARTUP_ROOT.to_string(),
 			raise_dynamic_root: RAISE_DYNAMIC_ROOT.to_string(),
 			raise_static_root: RAISE_STATIC_ROOT.to_string(),
-			shutdown_variants: SHUTDOWN_VARIANTS
-				.iter()
-				.map(|value| (*value).to_string())
-				.collect(),
+			pinch_root: PINCH_ROOT.to_string(),
+			shutdown_root: SHUTDOWN_ROOT.to_string(),
 		}
 	}
 }
@@ -203,7 +208,21 @@ impl AnimationPathConfig {
 		if self.raise_static_root.trim().is_empty() {
 			self.raise_static_root = defaults.raise_static_root;
 		}
-
+		if self.pinch_root.trim().is_empty() {
+			self.pinch_root = defaults.pinch_root;
+		}
+		if self.shutdown_root.trim().is_empty() {
+			self.shutdown_root = defaults.shutdown_root;
+		}
+		if self.default_nomal_idle_root.trim().is_empty() {
+			self.default_nomal_idle_root = defaults.default_nomal_idle_root;
+		}
+		if self.default_poor_condition_idle_root.trim().is_empty() {
+			self.default_poor_condition_idle_root = defaults.default_poor_condition_idle_root;
+		}
+		if self.default_ill_idle_root.trim().is_empty() {
+			self.default_ill_idle_root = defaults.default_ill_idle_root;
+		}
 		self.default_happy_idle_variants = self
 			.default_happy_idle_variants
 			.into_iter()
@@ -214,16 +233,6 @@ impl AnimationPathConfig {
 			self.default_happy_idle_variants = defaults.default_happy_idle_variants;
 		}
 
-		self.shutdown_variants = self
-			.shutdown_variants
-			.into_iter()
-			.map(|value| value.trim().to_string())
-			.filter(|value| !value.is_empty())
-			.collect();
-		if self.shutdown_variants.is_empty() {
-			self.shutdown_variants = defaults.shutdown_variants;
-		}
-
 		self
 	}
 }
@@ -232,10 +241,14 @@ impl AnimationPathConfig {
 struct AnimationPathConfigPartial {
 	assets_body_root: Option<String>,
 	default_happy_idle_variants: Option<Vec<String>>,
+	default_nomal_idle_root: Option<String>,
+	default_poor_condition_idle_root: Option<String>,
+	default_ill_idle_root: Option<String>,
 	startup_root: Option<String>,
 	raise_dynamic_root: Option<String>,
 	raise_static_root: Option<String>,
-	shutdown_variants: Option<Vec<String>>,
+	pinch_root: Option<String>,
+	shutdown_root: Option<String>,
 }
 
 impl AnimationPathConfigPartial {
@@ -246,6 +259,15 @@ impl AnimationPathConfigPartial {
 		if let Some(value) = self.default_happy_idle_variants {
 			base.default_happy_idle_variants = value;
 		}
+		if let Some(value) = self.default_nomal_idle_root {
+			base.default_nomal_idle_root = value;
+		}
+		if let Some(value) = self.default_poor_condition_idle_root {
+			base.default_poor_condition_idle_root = value;
+		}
+		if let Some(value) = self.default_ill_idle_root {
+			base.default_ill_idle_root = value;
+		}
 		if let Some(value) = self.startup_root {
 			base.startup_root = value;
 		}
@@ -255,8 +277,11 @@ impl AnimationPathConfigPartial {
 		if let Some(value) = self.raise_static_root {
 			base.raise_static_root = value;
 		}
-		if let Some(value) = self.shutdown_variants {
-			base.shutdown_variants = value;
+		if let Some(value) = self.pinch_root {
+			base.pinch_root = value;
+		}
+		if let Some(value) = self.shutdown_root {
+			base.shutdown_root = value;
 		}
 
 		base

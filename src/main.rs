@@ -79,7 +79,7 @@ fn build_ui(app: &Application) {
     let stats_service = PetStatsService::new(initial_panel_config);
 
     // 加载并显示资源图像
-    let image = match load_carousel_images(&window, current_pixbuf.clone()) {
+    let image = match load_carousel_images(&window, current_pixbuf.clone(), stats_service.clone()) {
         Ok(image_widget) => image_widget,
         Err(e) => {
             // Fatal 错误：资源缺失，程序无法继续运行
