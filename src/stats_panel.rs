@@ -3,9 +3,11 @@ use gtk4::{Align, Box, Image, Label, Orientation, Popover, ProgressBar};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-const BASIC_STAT_MAX: u32 = 100;
-const EXPERIENCE_MAX: u32 = 100;
-const LEVEL_MAX: u32 = 100;
+use crate::config::{
+    PANEL_BASIC_STAT_MAX, PANEL_DEFAULT_AFFINITY, PANEL_DEFAULT_EXPERIENCE,
+    PANEL_DEFAULT_HEALTH, PANEL_DEFAULT_LEVEL, PANEL_DEFAULT_MOOD, PANEL_DEFAULT_SATIETY,
+    PANEL_DEFAULT_STAMINA, PANEL_DEFAULT_THIRST, PANEL_EXPERIENCE_MAX, PANEL_LEVEL_MAX,
+};
 
 #[derive(Clone)]
 pub struct PetStats {
@@ -22,14 +24,14 @@ pub struct PetStats {
 impl Default for PetStats {
     fn default() -> Self {
         Self {
-            stamina: 80,
-            satiety: 70,
-            thirst: 65,
-            mood: 75,
-            health: 90,
-            affinity: 50,
-            experience: 10,
-            level: 1,
+            stamina: PANEL_DEFAULT_STAMINA,
+            satiety: PANEL_DEFAULT_SATIETY,
+            thirst: PANEL_DEFAULT_THIRST,
+            mood: PANEL_DEFAULT_MOOD,
+            health: PANEL_DEFAULT_HEALTH,
+            affinity: PANEL_DEFAULT_AFFINITY,
+            experience: PANEL_DEFAULT_EXPERIENCE,
+            level: PANEL_DEFAULT_LEVEL,
         }
     }
 }
@@ -53,67 +55,67 @@ impl PetStatsService {
 
     #[allow(dead_code)]
     pub fn set_stamina(&self, value: u32) {
-        self.inner.borrow_mut().stamina = value.min(BASIC_STAT_MAX);
+        self.inner.borrow_mut().stamina = value.min(PANEL_BASIC_STAT_MAX);
     }
 
     #[allow(dead_code)]
     pub fn set_satiety(&self, value: u32) {
-        self.inner.borrow_mut().satiety = value.min(BASIC_STAT_MAX);
+        self.inner.borrow_mut().satiety = value.min(PANEL_BASIC_STAT_MAX);
     }
 
     #[allow(dead_code)]
     pub fn set_thirst(&self, value: u32) {
-        self.inner.borrow_mut().thirst = value.min(BASIC_STAT_MAX);
+        self.inner.borrow_mut().thirst = value.min(PANEL_BASIC_STAT_MAX);
     }
 
     #[allow(dead_code)]
     pub fn set_mood(&self, value: u32) {
-        self.inner.borrow_mut().mood = value.min(BASIC_STAT_MAX);
+        self.inner.borrow_mut().mood = value.min(PANEL_BASIC_STAT_MAX);
     }
 
     #[allow(dead_code)]
     pub fn set_health(&self, value: u32) {
-        self.inner.borrow_mut().health = value.min(BASIC_STAT_MAX);
+        self.inner.borrow_mut().health = value.min(PANEL_BASIC_STAT_MAX);
     }
 
     #[allow(dead_code)]
     pub fn set_affinity(&self, value: u32) {
-        self.inner.borrow_mut().affinity = value.min(BASIC_STAT_MAX);
+        self.inner.borrow_mut().affinity = value.min(PANEL_BASIC_STAT_MAX);
     }
 
     #[allow(dead_code)]
     pub fn set_experience(&self, value: u32) {
-        self.inner.borrow_mut().experience = value.min(EXPERIENCE_MAX);
+        self.inner.borrow_mut().experience = value.min(PANEL_EXPERIENCE_MAX);
     }
 
     #[allow(dead_code)]
     pub fn set_level(&self, value: u32) {
-        self.inner.borrow_mut().level = value.min(LEVEL_MAX);
+        self.inner.borrow_mut().level = value.min(PANEL_LEVEL_MAX);
     }
 
     #[allow(dead_code)]
     pub fn gain_experience(&self, amount: u32) {
         let mut stats = self.inner.borrow_mut();
-        stats.experience = (stats.experience + amount).min(EXPERIENCE_MAX);
+        stats.experience = (stats.experience + amount).min(PANEL_EXPERIENCE_MAX);
     }
 
     #[allow(dead_code)]
     pub fn on_feed(&self, amount: u32) {
         let mut stats = self.inner.borrow_mut();
-        stats.satiety = (stats.satiety + amount).min(BASIC_STAT_MAX);
+        stats.satiety = (stats.satiety + amount).min(PANEL_BASIC_STAT_MAX);
     }
 
     #[allow(dead_code)]
     pub fn on_drink(&self, amount: u32) {
         let mut stats = self.inner.borrow_mut();
-        stats.thirst = (stats.thirst + amount).min(BASIC_STAT_MAX);
+        stats.thirst = (stats.thirst + amount).min(PANEL_BASIC_STAT_MAX);
     }
 
     #[allow(dead_code)]
     pub fn on_interact(&self, amount: u32) {
         let mut stats = self.inner.borrow_mut();
-        stats.mood = (stats.mood + amount).min(BASIC_STAT_MAX);
-        stats.affinity = (stats.affinity + amount / 2).min(BASIC_STAT_MAX);
+        stats.mood = (stats.mood + amount).min(PANEL_BASIC_STAT_MAX);
+        stats.affinity = (stats.affinity + amount / 2).min(PANEL_BASIC_STAT_MAX);
     }
 
     #[allow(dead_code)]
@@ -225,19 +227,44 @@ impl StatsPanel {
 
     pub fn refresh(&self) {
         let stats = self.stats_service.snapshot();
-        set_bar_value(&self.stamina_bar, &self.stamina_value, stats.stamina, BASIC_STAT_MAX);
-        set_bar_value(&self.satiety_bar, &self.satiety_value, stats.satiety, BASIC_STAT_MAX);
-        set_bar_value(&self.thirst_bar, &self.thirst_value, stats.thirst, BASIC_STAT_MAX);
-        set_bar_value(&self.mood_bar, &self.mood_value, stats.mood, BASIC_STAT_MAX);
-        set_bar_value(&self.health_bar, &self.health_value, stats.health, BASIC_STAT_MAX);
-        set_bar_value(&self.affinity_bar, &self.affinity_value, stats.affinity, BASIC_STAT_MAX);
+        set_bar_value(
+            &self.stamina_bar,
+            &self.stamina_value,
+            stats.stamina,
+            PANEL_BASIC_STAT_MAX,
+        );
+        set_bar_value(
+            &self.satiety_bar,
+            &self.satiety_value,
+            stats.satiety,
+            PANEL_BASIC_STAT_MAX,
+        );
+        set_bar_value(
+            &self.thirst_bar,
+            &self.thirst_value,
+            stats.thirst,
+            PANEL_BASIC_STAT_MAX,
+        );
+        set_bar_value(&self.mood_bar, &self.mood_value, stats.mood, PANEL_BASIC_STAT_MAX);
+        set_bar_value(
+            &self.health_bar,
+            &self.health_value,
+            stats.health,
+            PANEL_BASIC_STAT_MAX,
+        );
+        set_bar_value(
+            &self.affinity_bar,
+            &self.affinity_value,
+            stats.affinity,
+            PANEL_BASIC_STAT_MAX,
+        );
         set_bar_value(
             &self.experience_bar,
             &self.experience_value,
             stats.experience,
-            EXPERIENCE_MAX,
+            PANEL_EXPERIENCE_MAX,
         );
-        set_bar_value(&self.level_bar, &self.level_value, stats.level, LEVEL_MAX);
+        set_bar_value(&self.level_bar, &self.level_value, stats.level, PANEL_LEVEL_MAX);
     }
 }
 
