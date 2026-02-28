@@ -2,6 +2,7 @@ mod animation;
 mod config;
 mod drag;
 mod input_region;
+mod stats_panel;
 
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, CssProvider, STYLE_PROVIDER_PRIORITY_APPLICATION};
@@ -12,7 +13,8 @@ use std::rc::Rc;
 use animation::load_carousel_images;
 use config::APP_ID;
 use drag::setup_long_press_drag;
-use input_region::{setup_image_input_region, setup_input_probe};
+use input_region::{setup_context_menu, setup_image_input_region, setup_input_probe};
+use stats_panel::{PetStatsService, StatsPanel};
 
 fn main() {
     // GTK 应用主入口
@@ -61,6 +63,8 @@ fn build_ui(app: &Application) {
     window.set_margin(Edge::Bottom, 20);
 
     let current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(None));
+    let stats_service = PetStatsService::new();
+    let stats_panel = Rc::new(StatsPanel::new(app, stats_service.clone()));
 
     // 加载并显示资源图像
     let image = match load_carousel_images(&window, current_pixbuf.clone()) {
@@ -79,6 +83,13 @@ fn build_ui(app: &Application) {
     setup_input_probe(&window, &image);
     // 长按图片不透明区域后可拖动窗口位置
     setup_long_press_drag(&window, &image, current_pixbuf.clone());
+    // 右键弹出菜单（仅在可点击区域生效）
+    {
+        let stats_panel = stats_panel.clone();
+        setup_context_menu(&image, Rc::new(move || {
+            stats_panel.present();
+        }));
+    }
     
     window.present();
 

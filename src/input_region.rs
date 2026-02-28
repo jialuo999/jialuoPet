@@ -1,6 +1,7 @@
 use gtk4::cairo::Region;
 use gtk4::prelude::*;
-use gtk4::{ApplicationWindow, GestureClick, Image};
+use gtk4::{ApplicationWindow, Box, Button, GestureClick, Image, Orientation, Popover};
+use std::rc::Rc;
 
 use crate::config::INPUT_DEBUG_LOG;
 
@@ -10,7 +11,9 @@ pub fn setup_image_input_region(
     pixbuf: &gdk_pixbuf::Pixbuf,
 ) {
     let Some(surface) = window.surface() else {
-        eprintln!("[input-region] skipped: window surface is None");
+        if INPUT_DEBUG_LOG {
+            eprintln!("[input-region] skipped: window surface is None");
+        }
         return;
     };
 
@@ -57,6 +60,45 @@ pub fn setup_input_probe(window: &ApplicationWindow, image: &Image) {
         eprintln!("[probe] image click at ({x:.1}, {y:.1})");
     });
     image.add_controller(img_click);
+}
+
+pub fn setup_context_menu(image: &Image, on_panel_clicked: Rc<dyn Fn()>) {
+    let popover = Popover::new();
+    popover.set_has_arrow(true);
+    popover.set_autohide(true);
+    popover.set_parent(image);
+
+    let menu_box = Box::new(Orientation::Vertical, 4);
+    for item in ["投喂", "面板", "互动", "系统"] {
+        let button = Button::with_label(item);
+        button.set_halign(gtk4::Align::Fill);
+        if item == "面板" {
+            let panel_handler = on_panel_clicked.clone();
+            let popover_for_click = popover.clone();
+            button.connect_clicked(move |_| {
+                panel_handler();
+                popover_for_click.popdown();
+            });
+        }
+        menu_box.append(&button);
+    }
+    popover.set_child(Some(&menu_box));
+
+    let right_click = GestureClick::new();
+    right_click.set_button(3);
+    {
+        let popover = popover.clone();
+        right_click.connect_pressed(move |_, _, x, y| {
+            popover.set_pointing_to(Some(&gdk4::Rectangle::new(
+                x.round() as i32,
+                y.round() as i32,
+                1,
+                1,
+            )));
+            popover.popup();
+        });
+    }
+    image.add_controller(right_click);
 }
 
 fn create_region_from_pixbuf_scaled(

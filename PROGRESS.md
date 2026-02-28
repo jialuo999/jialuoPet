@@ -6,4 +6,5 @@
 2026.2.28 14:36 :Fix off-screen dragging for all directions by switching drag anchor to Left/Top.
 2026.2.28 14:52 :Refactor main.rs into modules: config, animation, input_region, drag.
 2026.2.28 14:23 :Add boot animation.
-2026.2.28 14:43 :Add drage animation and locate the drage point.
+2026.2.28 14:43 :Add drag animation and locate the drage point.
+2026.2.28 15:52 :Whole drag animation.
