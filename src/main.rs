@@ -10,10 +10,13 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use std::cell::RefCell;
 use std::process::Command;
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use animation::{is_shutdown_animation_finished, load_carousel_images, request_shutdown_animation};
-use config::{APP_ID, CAROUSEL_INTERVAL_MS};
+use config::{
+    load_panel_debug_config, start_panel_config_watcher, APP_ID, CAROUSEL_INTERVAL_MS,
+};
 use drag::setup_long_press_drag;
 use input_region::{setup_context_menu, setup_image_input_region, setup_input_probe};
 use stats_panel::{PetStatsService, StatsPanel};
@@ -72,7 +75,8 @@ fn build_ui(app: &Application) {
     window.set_margin(Edge::Bottom, 20);
 
     let current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(None));
-    let stats_service = PetStatsService::new();
+    let initial_panel_config = Rc::new(RefCell::new(load_panel_debug_config()));
+    let stats_service = PetStatsService::new(initial_panel_config);
 
     // 加载并显示资源图像
     let image = match load_carousel_images(&window, current_pixbuf.clone()) {
@@ -87,6 +91,32 @@ fn build_ui(app: &Application) {
     // 设置窗口子部件，透明背景自动应用
     window.set_child(Some(&image));
     let stats_panel = Rc::new(StatsPanel::new(&image, stats_service.clone()));
+
+    let (config_reload_tx, config_reload_rx) = mpsc::channel::<()>();
+    if let Err(err) = start_panel_config_watcher(move || {
+        let _ = config_reload_tx.send(());
+    }) {
+        eprintln!("启动配置热更新监听失败：{}", err);
+    }
+
+    {
+        let stats_service = stats_service.clone();
+        let stats_panel = stats_panel.clone();
+        glib::timeout_add_local(Duration::from_millis(250), move || {
+            let mut should_reload = false;
+            while config_reload_rx.try_recv().is_ok() {
+                should_reload = true;
+            }
+
+            if should_reload {
+                let panel_config = load_panel_debug_config();
+                stats_service.apply_panel_config(panel_config);
+                stats_panel.refresh();
+            }
+
+            glib::ControlFlow::Continue
+        });
+    }
 
     // 诊断：记录窗口/图片是否收到点击事件
     setup_input_probe(&window, &image);

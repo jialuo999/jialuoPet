@@ -9,8 +9,7 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{
-    ASSETS_BODY_ROOT, CAROUSEL_INTERVAL_MS, DEFAULT_HAPPY_IDLE_VARIANTS, RAISE_DYNAMIC_ROOT,
-    RAISE_STATIC_ROOT, SHUTDOWN_VARIANTS, STARTUP_EXCLUDED_DIRS, STARTUP_ROOT,
+    load_animation_path_config, AnimationPathConfig, CAROUSEL_INTERVAL_MS, STARTUP_EXCLUDED_DIRS,
 };
 use crate::input_region::setup_image_input_region;
 
@@ -54,8 +53,8 @@ pub fn is_shutdown_animation_finished() -> bool {
     SHUTDOWN_ANIMATION_FINISHED.load(Ordering::Relaxed)
 }
 
-fn body_asset_path(relative: &str) -> PathBuf {
-    PathBuf::from(ASSETS_BODY_ROOT).join(relative)
+fn body_asset_path(root: &str, relative: &str) -> PathBuf {
+    PathBuf::from(root).join(relative)
 }
 
 fn pseudo_random_index(len: usize) -> usize {
@@ -216,11 +215,16 @@ fn collect_drag_raise_end_variants(raise_static_root: &Path) -> Vec<Vec<PathBuf>
         .collect()
 }
 
-fn collect_shutdown_variants() -> Vec<Vec<PathBuf>> {
-    SHUTDOWN_VARIANTS
+fn collect_shutdown_variants(animation_config: &AnimationPathConfig) -> Vec<Vec<PathBuf>> {
+    animation_config
+        .shutdown_variants
         .iter()
         .filter_map(|relative_dir| {
-            let files = collect_png_files(&body_asset_path(relative_dir)).ok()?;
+            let files = collect_png_files(&body_asset_path(
+                &animation_config.assets_body_root,
+                relative_dir,
+            ))
+            .ok()?;
             if files.is_empty() {
                 None
             } else {
@@ -230,10 +234,12 @@ fn collect_shutdown_variants() -> Vec<Vec<PathBuf>> {
         .collect()
 }
 
-fn collect_default_happy_idle_files() -> Result<Vec<PathBuf>, String> {
+fn collect_default_happy_idle_files(
+    animation_config: &AnimationPathConfig,
+) -> Result<Vec<PathBuf>, String> {
     let mut all_files = Vec::new();
-    for variant in DEFAULT_HAPPY_IDLE_VARIANTS {
-        let dir = body_asset_path(variant);
+    for variant in &animation_config.default_happy_idle_variants {
+        let dir = body_asset_path(&animation_config.assets_body_root, variant);
         let mut files = collect_png_files(&dir)?;
         all_files.append(&mut files);
     }
@@ -265,20 +271,30 @@ pub fn load_carousel_images(
     window: &ApplicationWindow,
     current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
 ) -> Result<Image, String> {
-    let default_files = collect_default_happy_idle_files()?;
+    let animation_config = load_animation_path_config();
+    let default_files = collect_default_happy_idle_files(&animation_config)?;
     if default_files.is_empty() {
         return Err("默认静息动画目录中没有找到 PNG 文件".to_string());
     }
 
-    let startup_root = body_asset_path(STARTUP_ROOT);
+    let startup_root = body_asset_path(
+        &animation_config.assets_body_root,
+        &animation_config.startup_root,
+    );
     let startup_files = choose_startup_animation_files(&startup_root).unwrap_or_default();
     let playing_startup = !startup_files.is_empty();
-    let drag_raise_dir = body_asset_path(RAISE_DYNAMIC_ROOT);
+    let drag_raise_dir = body_asset_path(
+        &animation_config.assets_body_root,
+        &animation_config.raise_dynamic_root,
+    );
     let drag_raise_loop_files = collect_drag_raise_happy_files(&drag_raise_dir);
-    let drag_raise_static_dir = body_asset_path(RAISE_STATIC_ROOT);
+    let drag_raise_static_dir = body_asset_path(
+        &animation_config.assets_body_root,
+        &animation_config.raise_static_root,
+    );
     let drag_raise_start_files = collect_drag_raise_start_files(&drag_raise_static_dir);
     let drag_raise_end_variants = collect_drag_raise_end_variants(&drag_raise_static_dir);
-    let shutdown_variants = collect_shutdown_variants();
+    let shutdown_variants = collect_shutdown_variants(&animation_config);
 
     let image = Image::new();
     image.set_pixel_size(256);
