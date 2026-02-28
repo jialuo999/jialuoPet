@@ -1,17 +1,18 @@
+mod animation;
+mod config;
+mod drag;
+mod input_region;
+
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, CssProvider, GestureClick, Image, STYLE_PROVIDER_PRIORITY_APPLICATION};
+use gtk4::{Application, ApplicationWindow, CssProvider, STYLE_PROVIDER_PRIORITY_APPLICATION};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use gtk4::cairo::Region;
-use std::path::PathBuf;
-use std::fs;
-use glib::timeout_add_local;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
 
-const APP_ID: &str = "com.jialuo.niripet";
-const CAROUSEL_INTERVAL_MS: u64 = 150; // 150ms 轮播间隔
-const INPUT_DEBUG_LOG: bool = false;
+use animation::load_carousel_images;
+use config::APP_ID;
+use drag::setup_long_press_drag;
+use input_region::{setup_image_input_region, setup_input_probe};
 
 fn main() {
     // GTK 应用主入口
@@ -76,6 +77,8 @@ fn build_ui(app: &Application) {
 
     // 诊断：记录窗口/图片是否收到点击事件
     setup_input_probe(&window, &image);
+    // 长按图片不透明区域后可拖动窗口位置
+    setup_long_press_drag(&window);
     
     window.present();
 
@@ -97,215 +100,5 @@ fn build_ui(app: &Application) {
             setup_image_input_region(mapped_window, &image_for_map, pixbuf);
         }
     });
-}
-
-/// 加载轮播图像集
-/// 从 assets/body/Default/Happy/1 目录加载所有 PNG 文件并启动轮播动画
-///
-/// # Returns
-/// Result<Image, String> - 成功返回轮播 GTK Image Widget，失败返回错误信息
-fn load_carousel_images(
-    window: &ApplicationWindow,
-    current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
-) -> Result<Image, String> {
-    let asset_dir = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/Default/Happy/1");
-
-    if !asset_dir.is_dir() {
-        return Err(format!("目录不存在：{}", asset_dir.display()));
-    }
-
-    // 读取目录中的所有 PNG 文件并排序
-    let mut image_files: Vec<PathBuf> = fs::read_dir(&asset_dir)
-        .map_err(|e| format!("无法读取目录 {}: {}", asset_dir.display(), e))?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("png") {
-                Some(path)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    if image_files.is_empty() {
-        return Err(format!("目录中没有找到 PNG 文件：{}", asset_dir.display()));
-    }
-
-    // 排序文件名，确保播放顺序正确
-    image_files.sort();
-
-    // 创建 Image Widget
-    let image = Image::new();
-    image.set_pixel_size(256);
-
-    // 初始化状态：Rc<RefCell<>> 用于在闭包中共享可变状态
-    let state = Rc::new(RefCell::new((0usize, image_files.clone())));
-    let state_clone = state.clone();
-    let image_clone = image.clone();
-    let window_clone = window.clone();
-
-    // 初始化第一张图片
-    if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&image_files[0]) {
-        image_clone.set_from_pixbuf(Some(&pixbuf));
-        *current_pixbuf.borrow_mut() = Some(pixbuf.clone());
-        setup_image_input_region(&window_clone, &image_clone, &pixbuf);
-    }
-
-    // 设置定时器，每 150ms 更新一次图片
-    timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
-        let (next_path, _) = {
-            let mut state_mut = state_clone.borrow_mut();
-            let current_index = state_mut.0;
-            let image_paths = &state_mut.1;
-
-            // 更新到下一张图片
-            let next_index = (current_index + 1) % image_paths.len();
-            let next_path = image_paths[next_index].clone();
-            
-            // 更新状态
-            state_mut.0 = next_index;
-
-            (next_path, true)
-        };
-
-        // 加载并显示下一张图片
-        if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&next_path) {
-            image_clone.set_from_pixbuf(Some(&pixbuf));
-            *current_pixbuf.borrow_mut() = Some(pixbuf.clone());
-            // 更新输入形状为图片不透明区域
-            setup_image_input_region(&window_clone, &image_clone, &pixbuf);
-        }
-
-        // 返回 Continue，使定时器继续运行
-        glib::ControlFlow::Continue
-    });
-
-    Ok(image)
-}
-
-/// 设置窗口输入形状：仅图片不透明区域接收鼠标事件
-fn setup_image_input_region(
-    window: &ApplicationWindow,
-    image: &Image,
-    pixbuf: &gdk_pixbuf::Pixbuf,
-) {
-    let Some(surface) = window.surface() else {
-        eprintln!("[input-region] skipped: window surface is None");
-        return;
-    };
-
-    let alloc = image.allocation();
-    let (offset_x, offset_y, render_w, render_h) = (alloc.x(), alloc.y(), alloc.width(), alloc.height());
-
-    let region = if render_w > 0 && render_h > 0 {
-        create_region_from_pixbuf_scaled(pixbuf, offset_x, offset_y, render_w, render_h)
-    } else {
-        let full = gtk4::cairo::RectangleInt::new(0, 0, pixbuf.width(), pixbuf.height());
-        Region::create_rectangle(&full)
-    };
-
-    surface.set_input_region(&region);
-    if INPUT_DEBUG_LOG {
-        eprintln!(
-            "[input-region] applied: pixbuf={}x{}, render=({},{} {}x{}), has_alpha={}, region_empty={}",
-            pixbuf.width(),
-            pixbuf.height(),
-            offset_x,
-            offset_y,
-            render_w,
-            render_h,
-            pixbuf.has_alpha(),
-            region.is_empty()
-        );
-    }
-}
-
-fn setup_input_probe(window: &ApplicationWindow, image: &Image) {
-    if !INPUT_DEBUG_LOG {
-        return;
-    }
-
-    let win_click = GestureClick::new();
-    win_click.connect_pressed(|_, _, x, y| {
-        eprintln!("[probe] window click at ({x:.1}, {y:.1})");
-    });
-    window.add_controller(win_click);
-
-    let img_click = GestureClick::new();
-    img_click.connect_pressed(|_, _, x, y| {
-        eprintln!("[probe] image click at ({x:.1}, {y:.1})");
-    });
-    image.add_controller(img_click);
-}
-
-/// 根据 pixbuf 的 Alpha 通道创建输入区域（缩放到 widget 实际渲染坐标）
-/// Alpha > 0 的像素为可点击区域，透明背景会穿透
-fn create_region_from_pixbuf_scaled(
-    pixbuf: &gdk_pixbuf::Pixbuf,
-    offset_x: i32,
-    offset_y: i32,
-    render_w: i32,
-    render_h: i32,
-) -> Region {
-    let src_w = pixbuf.width();
-    let src_h = pixbuf.height();
-
-    if !pixbuf.has_alpha() {
-        let full = gtk4::cairo::RectangleInt::new(offset_x, offset_y, render_w, render_h);
-        return Region::create_rectangle(&full);
-    }
-
-    let Some(pixel_bytes) = pixbuf.pixel_bytes() else {
-        let full = gtk4::cairo::RectangleInt::new(offset_x, offset_y, render_w, render_h);
-        return Region::create_rectangle(&full);
-    };
-
-    let bytes = pixel_bytes.as_ref();
-    let channels = pixbuf.n_channels() as usize;
-    let rowstride = pixbuf.rowstride() as usize;
-    let alpha_idx = channels - 1;
-    let region = Region::create();
-
-    for dy in 0..render_h {
-        let sy = ((dy as i64 * src_h as i64) / render_h as i64) as usize;
-        let mut run_start: Option<i32> = None;
-
-        for dx in 0..render_w {
-            let sx = ((dx as i64 * src_w as i64) / render_w as i64) as usize;
-            let offset = sy * rowstride + sx * channels;
-            let alpha = if offset + alpha_idx < bytes.len() {
-                bytes[offset + alpha_idx]
-            } else {
-                0
-            };
-            match (run_start, alpha > 0) {
-                (None, true) => run_start = Some(dx),
-                (Some(start), false) => {
-                    let rect = gtk4::cairo::RectangleInt::new(offset_x + start, offset_y + dy, dx - start, 1);
-                    let _ = region.union_rectangle(&rect);
-                    run_start = None;
-                }
-                _ => {}
-            }
-        }
-
-        if let Some(start) = run_start {
-            let rect = gtk4::cairo::RectangleInt::new(
-                offset_x + start,
-                offset_y + dy,
-                render_w - start,
-                1,
-            );
-            let _ = region.union_rectangle(&rect);
-        }
-    }
-
-    if region.is_empty() {
-        let full = gtk4::cairo::RectangleInt::new(offset_x, offset_y, render_w, render_h);
-        Region::create_rectangle(&full)
-    } else {
-        region
-    }
 }
 
