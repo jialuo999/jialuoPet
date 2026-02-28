@@ -535,11 +535,15 @@ fn collect_touch_stage_variants(
         .filter(|path| path_in_stage_branch(path, touch_root, stage_prefix))
         .collect();
 
-    let mut mode_dirs: Vec<PathBuf> = candidate_dirs
-        .iter()
-        .filter(|path| path_matches_mode(path, mode))
-        .cloned()
-        .collect();
+    let pick_by_mode = |target_mode: PetMode| -> Vec<PathBuf> {
+        candidate_dirs
+            .iter()
+            .filter(|path| path_matches_mode(path, target_mode))
+            .cloned()
+            .collect()
+    };
+
+    let mut mode_dirs: Vec<PathBuf> = pick_by_mode(mode);
 
     let is_touch_body = touch_root
         .file_name()
@@ -550,14 +554,16 @@ fn collect_touch_stage_variants(
         mode_dirs.retain(|path| !path_contains_keyword(path, "happy_turn"));
     }
 
+    if mode_dirs.is_empty() && mode != PetMode::Nomal {
+        mode_dirs = pick_by_mode(PetMode::Nomal);
+    }
+
     if mode_dirs.is_empty() && mode != PetMode::Happy {
-        mode_dirs = candidate_dirs
-            .into_iter()
-            .filter(|path| path_matches_mode(path, PetMode::Happy))
-            .collect();
-        if is_touch_body {
-            mode_dirs.retain(|path| !path_contains_keyword(path, "happy_turn"));
-        }
+        mode_dirs = pick_by_mode(PetMode::Happy);
+    }
+
+    if is_touch_body {
+        mode_dirs.retain(|path| !path_contains_keyword(path, "happy_turn"));
     }
 
     mode_dirs
@@ -694,80 +700,108 @@ fn collect_shutdown_variants(shutdown_root: &Path, mode: PetMode) -> Vec<Vec<Pat
         .collect()
 }
 
-fn collect_default_happy_idle_files(
+fn collect_default_happy_idle_variants(
     animation_config: &AnimationPathConfig,
-) -> Result<Vec<PathBuf>, String> {
-    let mut all_files = Vec::new();
+) -> Result<Vec<Vec<PathBuf>>, String> {
+    let mut variants = Vec::new();
     for variant in &animation_config.default_happy_idle_variants {
         let dir = body_asset_path(&animation_config.assets_body_root, variant);
-        let mut files = collect_png_files(&dir)?;
-        all_files.append(&mut files);
+        let files = collect_png_files(&dir)?;
+        if !files.is_empty() {
+            variants.push(files);
+        }
     }
-    Ok(all_files)
+    Ok(variants)
 }
 
-fn collect_default_mode_idle_files(
+fn collect_default_mode_idle_variants(
     animation_config: &AnimationPathConfig,
     mode: PetMode,
-) -> Vec<PathBuf> {
-    match mode {
-        PetMode::Happy => collect_default_happy_idle_files(animation_config).unwrap_or_default(),
-        PetMode::Nomal => collect_png_files_recursive_filtered(
-            &body_asset_path(
-                &animation_config.assets_body_root,
-                &animation_config.default_nomal_idle_root,
-            ),
-            &[],
-        )
-        .unwrap_or_default(),
-        PetMode::PoorCondition => collect_png_files_recursive_filtered(
-            &body_asset_path(
-                &animation_config.assets_body_root,
-                &animation_config.default_poor_condition_idle_root,
-            ),
-            &[],
-        )
-        .unwrap_or_default(),
-        PetMode::Ill => collect_png_files_recursive_filtered(
-            &body_asset_path(
-                &animation_config.assets_body_root,
-                &animation_config.default_ill_idle_root,
-            ),
-            &[],
-        )
-        .unwrap_or_default(),
+) -> Vec<Vec<PathBuf>> {
+    if mode == PetMode::Happy {
+        return collect_default_happy_idle_variants(animation_config).unwrap_or_default();
+    }
+
+    let root = match mode {
+        PetMode::Nomal => body_asset_path(
+            &animation_config.assets_body_root,
+            &animation_config.default_nomal_idle_root,
+        ),
+        PetMode::PoorCondition => body_asset_path(
+            &animation_config.assets_body_root,
+            &animation_config.default_poor_condition_idle_root,
+        ),
+        PetMode::Ill => body_asset_path(
+            &animation_config.assets_body_root,
+            &animation_config.default_ill_idle_root,
+        ),
+        PetMode::Happy => unreachable!(),
+    };
+
+    collect_png_variant_dirs_recursive(&root)
+        .iter()
+        .filter_map(|dir| {
+            let files = collect_png_files(dir).ok()?;
+            if files.is_empty() {
+                None
+            } else {
+                Some(files)
+            }
+        })
+        .collect()
+}
+
+fn pick_random_variant(variants: &[Vec<PathBuf>]) -> Option<Vec<PathBuf>> {
+    if variants.is_empty() {
+        None
+    } else {
+        Some(variants[pseudo_random_index(variants.len())].clone())
     }
 }
 
 fn select_default_files_for_mode(
     mode: PetMode,
-    happy_files: &[PathBuf],
-    nomal_files: &[PathBuf],
-    poor_condition_files: &[PathBuf],
-    ill_files: &[PathBuf],
+    happy_variants: &[Vec<PathBuf>],
+    nomal_variants: &[Vec<PathBuf>],
+    poor_condition_variants: &[Vec<PathBuf>],
+    ill_variants: &[Vec<PathBuf>],
 ) -> Vec<PathBuf> {
     let selected = match mode {
-        PetMode::Happy => happy_files,
-        PetMode::Nomal => nomal_files,
-        PetMode::PoorCondition => poor_condition_files,
-        PetMode::Ill => ill_files,
+        PetMode::Happy => pick_random_variant(happy_variants),
+        PetMode::Nomal => pick_random_variant(nomal_variants),
+        PetMode::PoorCondition => pick_random_variant(poor_condition_variants),
+        PetMode::Ill => pick_random_variant(ill_variants),
     };
 
-    if selected.is_empty() {
-        happy_files.to_vec()
-    } else {
-        selected.to_vec()
-    }
+    selected
+        .or_else(|| pick_random_variant(happy_variants))
+        .unwrap_or_default()
+}
+
+fn refresh_default_idle_selection(state: &mut CarouselState) {
+    state.default_files = select_default_files_for_mode(
+        state.current_mode,
+        &state.default_happy_variants,
+        &state.default_nomal_variants,
+        &state.default_poor_condition_variants,
+        &state.default_ill_variants,
+    );
+    state.default_index = 0;
+}
+
+fn enter_default_idle(state: &mut CarouselState) -> PathBuf {
+    refresh_default_idle_selection(state);
+    state.default_files[0].clone()
 }
 
 struct CarouselState {
     startup_files: Vec<PathBuf>,
     startup_index: usize,
     current_mode: PetMode,
-    default_happy_files: Vec<PathBuf>,
-    default_nomal_files: Vec<PathBuf>,
-    default_poor_condition_files: Vec<PathBuf>,
-    default_ill_files: Vec<PathBuf>,
+    default_happy_variants: Vec<Vec<PathBuf>>,
+    default_nomal_variants: Vec<Vec<PathBuf>>,
+    default_poor_condition_variants: Vec<Vec<PathBuf>>,
+    default_ill_variants: Vec<Vec<PathBuf>>,
     default_files: Vec<PathBuf>,
     default_index: usize,
     drag_raise_start_files: Vec<PathBuf>,
@@ -805,21 +839,21 @@ pub fn load_carousel_images(
     stats_service: PetStatsService,
 ) -> Result<Image, String> {
     let animation_config = load_animation_path_config();
-    let default_happy_files = collect_default_happy_idle_files(&animation_config)?;
-    if default_happy_files.is_empty() {
+    let default_happy_variants = collect_default_happy_idle_variants(&animation_config)?;
+    if default_happy_variants.is_empty() {
         return Err("默认静息动画目录中没有找到 PNG 文件".to_string());
     }
-    let default_nomal_files = collect_default_mode_idle_files(&animation_config, PetMode::Nomal);
-    let default_poor_condition_files =
-        collect_default_mode_idle_files(&animation_config, PetMode::PoorCondition);
-    let default_ill_files = collect_default_mode_idle_files(&animation_config, PetMode::Ill);
+    let default_nomal_variants = collect_default_mode_idle_variants(&animation_config, PetMode::Nomal);
+    let default_poor_condition_variants =
+        collect_default_mode_idle_variants(&animation_config, PetMode::PoorCondition);
+    let default_ill_variants = collect_default_mode_idle_variants(&animation_config, PetMode::Ill);
     let current_mode = stats_service.cal_mode();
     let default_files = select_default_files_for_mode(
         current_mode,
-        &default_happy_files,
-        &default_nomal_files,
-        &default_poor_condition_files,
-        &default_ill_files,
+        &default_happy_variants,
+        &default_nomal_variants,
+        &default_poor_condition_variants,
+        &default_ill_variants,
     );
 
     let startup_root = body_asset_path(
@@ -867,10 +901,10 @@ pub fn load_carousel_images(
         startup_files,
         startup_index: 0,
         current_mode,
-        default_happy_files,
-        default_nomal_files,
-        default_poor_condition_files,
-        default_ill_files,
+        default_happy_variants,
+        default_nomal_variants,
+        default_poor_condition_variants,
+        default_ill_variants,
         default_files,
         default_index: 0,
         drag_raise_start_files,
@@ -941,14 +975,7 @@ pub fn load_carousel_images(
                 let next_mode = stats_service_clone.cal_mode();
                 if next_mode != state_mut.current_mode {
                     state_mut.current_mode = next_mode;
-                    state_mut.default_files = select_default_files_for_mode(
-                        next_mode,
-                        &state_mut.default_happy_files,
-                        &state_mut.default_nomal_files,
-                        &state_mut.default_poor_condition_files,
-                        &state_mut.default_ill_files,
-                    );
-                    state_mut.default_index = 0;
+                    refresh_default_idle_selection(&mut state_mut);
                     state_mut.drag_raise_start_files =
                         collect_drag_raise_start_files(&drag_raise_static_root_clone, next_mode);
                     state_mut.drag_raise_start_index = 0;
@@ -979,7 +1006,7 @@ pub fn load_carousel_images(
                         && state_mut.drag_playback_mode == DragPlaybackMode::None
                         && state_mut.pinch_playback_mode == PinchPlaybackMode::None
                     {
-                        forced_frame = state_mut.default_files.first().cloned();
+                        forced_frame = Some(enter_default_idle(&mut state_mut));
                     }
                 }
             }
@@ -1148,7 +1175,7 @@ pub fn load_carousel_images(
                     state_mut.drag_raise_loop_files[0].clone()
                 } else {
                     state_mut.drag_playback_mode = DragPlaybackMode::None;
-                    state_mut.default_files[state_mut.default_index].clone()
+                    enter_default_idle(&mut state_mut)
                 }
             } else if state_mut.drag_playback_mode == DragPlaybackMode::Loop
                 && !state_mut.drag_raise_loop_files.is_empty()
@@ -1166,7 +1193,7 @@ pub fn load_carousel_images(
                     if state_mut.playing_startup {
                         state_mut.startup_files[state_mut.startup_index].clone()
                     } else {
-                        state_mut.default_files[state_mut.default_index].clone()
+                        enter_default_idle(&mut state_mut)
                     }
                 }
             } else if state_mut.pinch_playback_mode == PinchPlaybackMode::Start {
@@ -1179,14 +1206,14 @@ pub fn load_carousel_images(
                     state_mut.pinch_loop_files = state_mut.pinch_loop_variants[variant_index].clone();
                     state_mut.pinch_loop_index = 0;
                     state_mut.pinch_playback_mode = PinchPlaybackMode::Loop;
-                    state_mut
-                        .pinch_loop_files
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| state_mut.default_files[state_mut.default_index].clone())
+                    if let Some(frame) = state_mut.pinch_loop_files.first().cloned() {
+                        frame
+                    } else {
+                        enter_default_idle(&mut state_mut)
+                    }
                 } else {
                     state_mut.pinch_playback_mode = PinchPlaybackMode::None;
-                    state_mut.default_files[state_mut.default_index].clone()
+                    enter_default_idle(&mut state_mut)
                 }
             } else if state_mut.pinch_playback_mode == PinchPlaybackMode::Loop
                 && !state_mut.pinch_loop_files.is_empty()
@@ -1215,7 +1242,7 @@ pub fn load_carousel_images(
                     if state_mut.playing_startup {
                         state_mut.startup_files[state_mut.startup_index].clone()
                     } else {
-                        state_mut.default_files[state_mut.default_index].clone()
+                        enter_default_idle(&mut state_mut)
                     }
                 }
             } else if state_mut.touch_playback_mode != TouchPlaybackMode::None {
@@ -1230,7 +1257,7 @@ pub fn load_carousel_images(
                     if state_mut.playing_startup {
                         state_mut.startup_files[state_mut.startup_index].clone()
                     } else {
-                        state_mut.default_files[state_mut.default_index].clone()
+                        enter_default_idle(&mut state_mut)
                     }
                 }
             } else if state_mut.playing_startup {
@@ -1240,8 +1267,7 @@ pub fn load_carousel_images(
                     state_mut.startup_files[next_startup_index].clone()
                 } else {
                     state_mut.playing_startup = false;
-                    state_mut.default_index = 0;
-                    state_mut.default_files[0].clone()
+                    enter_default_idle(&mut state_mut)
                 }
             } else {
                 let next_index = (state_mut.default_index + 1) % state_mut.default_files.len();
