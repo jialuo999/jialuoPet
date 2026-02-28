@@ -2,24 +2,20 @@ use glib::timeout_add_local;
 use gtk4::{ApplicationWindow, Image};
 use std::cell::RefCell;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::CAROUSEL_INTERVAL_MS;
 use crate::input_region::setup_image_input_region;
 
-pub fn load_carousel_images(
-    window: &ApplicationWindow,
-    current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
-) -> Result<Image, String> {
-    let asset_dir = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/Default/Happy/1");
-
+fn collect_png_files(asset_dir: &Path) -> Result<Vec<PathBuf>, String> {
     if !asset_dir.is_dir() {
         return Err(format!("目录不存在：{}", asset_dir.display()));
     }
 
-    let mut image_files: Vec<PathBuf> = fs::read_dir(&asset_dir)
+    let mut image_files: Vec<PathBuf> = fs::read_dir(asset_dir)
         .map_err(|e| format!("无法读取目录 {}: {}", asset_dir.display(), e))?
         .filter_map(|entry| {
             let entry = entry.ok()?;
@@ -32,21 +28,103 @@ pub fn load_carousel_images(
         })
         .collect();
 
-    if image_files.is_empty() {
-        return Err(format!("目录中没有找到 PNG 文件：{}", asset_dir.display()));
+    image_files.sort();
+    Ok(image_files)
+}
+
+fn choose_startup_animation_files(startup_root: &Path) -> Option<Vec<PathBuf>> {
+    let startup_dirs: Vec<PathBuf> = fs::read_dir(startup_root)
+        .ok()?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if !path.is_dir() {
+                return None;
+            }
+
+            let dir_name = path.file_name()?.to_str()?;
+            if dir_name.eq_ignore_ascii_case("PoorCondition") {
+                return None;
+            }
+
+            Some(path)
+        })
+        .collect();
+
+    if startup_dirs.is_empty() {
+        return None;
     }
 
-    image_files.sort();
+    let mut available_variants: Vec<Vec<PathBuf>> = startup_dirs
+        .iter()
+        .filter_map(|dir| {
+            let files = collect_png_files(dir).ok()?;
+            if files.is_empty() {
+                None
+            } else {
+                Some(files)
+            }
+        })
+        .collect();
+
+    if available_variants.is_empty() {
+        return None;
+    }
+
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as usize;
+    let selected_index = seed % available_variants.len();
+    Some(available_variants.swap_remove(selected_index))
+}
+
+struct CarouselState {
+    startup_files: Vec<PathBuf>,
+    startup_index: usize,
+    default_files: Vec<PathBuf>,
+    default_index: usize,
+    playing_startup: bool,
+}
+
+pub fn load_carousel_images(
+    window: &ApplicationWindow,
+    current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+) -> Result<Image, String> {
+    let default_dir = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/Default/Happy/1");
+    let default_files = collect_png_files(&default_dir)?;
+    if default_files.is_empty() {
+        return Err(format!("目录中没有找到 PNG 文件：{}", default_dir.display()));
+    }
+
+    let startup_root = PathBuf::from("/home/jialuo/Code/jialuoPet/assets/body/StartUP");
+    let startup_files = choose_startup_animation_files(&startup_root).unwrap_or_default();
+    let playing_startup = !startup_files.is_empty();
 
     let image = Image::new();
     image.set_pixel_size(256);
 
-    let state = Rc::new(RefCell::new((0usize, image_files.clone())));
+    let state = Rc::new(RefCell::new(CarouselState {
+        startup_files,
+        startup_index: 0,
+        default_files,
+        default_index: 0,
+        playing_startup,
+    }));
     let state_clone = state.clone();
     let image_clone = image.clone();
     let window_clone = window.clone();
 
-    if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&image_files[0]) {
+    let first_frame = {
+        let state_ref = state.borrow();
+        if state_ref.playing_startup {
+            state_ref.startup_files[0].clone()
+        } else {
+            state_ref.default_files[0].clone()
+        }
+    };
+
+    if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&first_frame) {
         image_clone.set_from_pixbuf(Some(&pixbuf));
         *current_pixbuf.borrow_mut() = Some(pixbuf.clone());
         setup_image_input_region(&window_clone, &image_clone, &pixbuf);
@@ -55,12 +133,21 @@ pub fn load_carousel_images(
     timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
         let next_path = {
             let mut state_mut = state_clone.borrow_mut();
-            let current_index = state_mut.0;
-            let image_paths = &state_mut.1;
-            let next_index = (current_index + 1) % image_paths.len();
-            let next_path = image_paths[next_index].clone();
-            state_mut.0 = next_index;
-            next_path
+            if state_mut.playing_startup {
+                let next_startup_index = state_mut.startup_index + 1;
+                if next_startup_index < state_mut.startup_files.len() {
+                    state_mut.startup_index = next_startup_index;
+                    state_mut.startup_files[next_startup_index].clone()
+                } else {
+                    state_mut.playing_startup = false;
+                    state_mut.default_index = 0;
+                    state_mut.default_files[0].clone()
+                }
+            } else {
+                let next_index = (state_mut.default_index + 1) % state_mut.default_files.len();
+                state_mut.default_index = next_index;
+                state_mut.default_files[next_index].clone()
+            }
         };
 
         if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&next_path) {

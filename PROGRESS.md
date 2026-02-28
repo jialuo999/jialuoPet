@@ -5,3 +5,4 @@
 2026.2.28 14:22 :Allow dragging pet window beyond screen borders (off-screen).
 2026.2.28 14:36 :Fix off-screen dragging for all directions by switching drag anchor to Left/Top.
 2026.2.28 14:52 :Refactor main.rs into modules: config, animation, input_region, drag.
+2026.2.28 14:23 :Add boot animation.
