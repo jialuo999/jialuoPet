@@ -56,7 +56,6 @@ impl SettingsPanel {
         let saved_remember_position = Rc::new(RefCell::new(initial_settings.remember_position));
 
         {
-            let window = window.clone();
             let remember_position_check = remember_position_check.clone();
             let saved_remember_position = saved_remember_position.clone();
             let on_save_settings = on_save_settings.clone();
@@ -64,17 +63,14 @@ impl SettingsPanel {
                 let remember_position = remember_position_check.is_active();
                 on_save_settings(remember_position);
                 *saved_remember_position.borrow_mut() = remember_position;
-                window.hide();
             });
         }
 
         {
-            let window = window.clone();
             let remember_position_check = remember_position_check.clone();
             let saved_remember_position = saved_remember_position.clone();
             cancel_button.connect_clicked(move |_| {
                 remember_position_check.set_active(*saved_remember_position.borrow());
-                window.hide();
             });
         }
 

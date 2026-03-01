@@ -148,6 +148,7 @@ pub fn setup_long_press_drag(
     current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
     stats_service: PetStatsService,
     on_drag_finished: Rc<dyn Fn(i32, i32)>,
+    is_shutting_down: Rc<dyn Fn() -> bool>,
 ) {
     #[derive(Clone, Copy)]
     struct DragState {
@@ -189,7 +190,11 @@ pub fn setup_long_press_drag(
         let image = image.clone();
         let current_pixbuf = current_pixbuf.clone();
         let stats_service = stats_service.clone();
+        let is_shutting_down = is_shutting_down.clone();
         click.connect_pressed(move |_, _, press_x, press_y| {
+            if is_shutting_down() {
+                return;
+            }
             let mut drag_state = state.borrow_mut();
             drag_state.is_pressed = true;
             drag_state.press_at = Some(Instant::now());
@@ -220,7 +225,11 @@ pub fn setup_long_press_drag(
         let state = state.clone();
         let window = window.clone();
         let on_drag_finished = on_drag_finished.clone();
+        let is_shutting_down = is_shutting_down.clone();
         click.connect_released(move |_, _, _, _| {
+            if is_shutting_down() {
+                return;
+            }
             let mut drag_state = state.borrow_mut();
             let was_dragging = drag_state.drag_enabled;
             let was_pinching = drag_state.pinch_active;
@@ -246,7 +255,11 @@ pub fn setup_long_press_drag(
     drag.set_button(1);
     {
         let state = state.clone();
+        let is_shutting_down = is_shutting_down.clone();
         drag.connect_drag_begin(move |_, start_x, start_y| {
+            if is_shutting_down() {
+                return;
+            }
             let mut drag_state = state.borrow_mut();
             drag_state.drag_start_x = start_x;
             drag_state.drag_start_y = start_y;
@@ -258,7 +271,11 @@ pub fn setup_long_press_drag(
         let image = image.clone();
         let current_pixbuf = current_pixbuf.clone();
         let stats_service = stats_service.clone();
+        let is_shutting_down = is_shutting_down.clone();
         drag.connect_drag_update(move |_, offset_x, offset_y| {
+            if is_shutting_down() {
+                return;
+            }
             let mut drag_state = state.borrow_mut();
             if !drag_state.is_pressed {
                 return;

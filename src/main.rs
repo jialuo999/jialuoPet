@@ -188,6 +188,8 @@ fn build_ui(app: &Application) {
     // 诊断：记录窗口/图片是否收到点击事件
     setup_input_probe(&window, &image);
     // 长按图片不透明区域后可拖动窗口位置
+    let pending_action = Rc::new(RefCell::new(PendingSystemAction::None));
+
     setup_long_press_drag(
         &window,
         &image,
@@ -205,6 +207,10 @@ fn build_ui(app: &Application) {
                 }
             })
         },
+        {
+            let pending_action = pending_action.clone();
+            Rc::new(move || *pending_action.borrow() != PendingSystemAction::None)
+        },
     );
     setup_touch_click_regions(
         &image,
@@ -216,6 +222,10 @@ fn build_ui(app: &Application) {
         Rc::new(|| {
             request_touch_body_animation();
         }),
+        {
+            let pending_action = pending_action.clone();
+            Rc::new(move || *pending_action.borrow() != PendingSystemAction::None)
+        },
     );
     // 右键弹出菜单（仅在可点击区域生效）
     {
@@ -244,7 +254,6 @@ fn build_ui(app: &Application) {
             ))
         };
         let app_for_quit = app.clone();
-        let pending_action = Rc::new(RefCell::new(PendingSystemAction::None));
 
         let request_system_action = {
             let pending_action = pending_action.clone();
@@ -331,6 +340,10 @@ fn build_ui(app: &Application) {
             },
             request_restart,
             request_quit,
+            {
+                let pending_action = pending_action.clone();
+                Rc::new(move || *pending_action.borrow() != PendingSystemAction::None)
+            },
         );
     }
 

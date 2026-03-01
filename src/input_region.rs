@@ -130,6 +130,7 @@ pub fn setup_context_menu(
     on_before_menu_popup: Rc<dyn Fn()>,
     on_restart_clicked: Rc<dyn Fn()>,
     on_quit_clicked: Rc<dyn Fn()>,
+    is_shutting_down: Rc<dyn Fn() -> bool>,
 ) {
     let popover = Popover::new();
     popover.set_has_arrow(true);
@@ -231,7 +232,11 @@ pub fn setup_context_menu(
         let last_click_pos = last_click_pos.clone();
         let on_before_menu_popup = on_before_menu_popup.clone();
         let system_popover = system_popover.clone();
+        let is_shutting_down = is_shutting_down.clone();
         right_click.connect_pressed(move |_, _, x, y| {
+            if is_shutting_down() {
+                return;
+            }
             let xi = x.round() as i32;
             let yi = y.round() as i32;
             *last_click_pos.borrow_mut() = (xi, yi);
@@ -307,6 +312,7 @@ pub fn setup_touch_click_regions(
     stats_service: PetStatsService,
     on_head_clicked: Rc<dyn Fn()>,
     on_body_clicked: Rc<dyn Fn()>,
+    is_shutting_down: Rc<dyn Fn() -> bool>,
 ) {
     #[derive(Default)]
     struct TapState {
@@ -321,7 +327,11 @@ pub fn setup_touch_click_regions(
 
     {
         let tap_state = tap_state.clone();
+        let is_shutting_down = is_shutting_down.clone();
         click.connect_pressed(move |_, _, x, y| {
+            if is_shutting_down() {
+                return;
+            }
             let mut state = tap_state.borrow_mut();
             state.press_x = x;
             state.press_y = y;
@@ -336,7 +346,11 @@ pub fn setup_touch_click_regions(
         let stats_service = stats_service.clone();
         let on_head_clicked = on_head_clicked.clone();
         let on_body_clicked = on_body_clicked.clone();
+        let is_shutting_down = is_shutting_down.clone();
         click.connect_released(move |_, _, x, y| {
+            if is_shutting_down() {
+                return;
+            }
             let mut state = tap_state.borrow_mut();
             let Some(press_at) = state.press_at.take() else {
                 return;
