@@ -404,6 +404,10 @@ pub(crate) fn collect_drag_raise_loop_files(
 }
 
 pub(crate) fn collect_drag_raise_start_files(_raise_static_root: &Path, _mode: PetMode) -> Vec<PathBuf> {
+    // 当前资源集未提供 Drag Raise 的 start 段（A_*）。
+    // 这里返回空，交由 DragRaisePlayer::start() 在 start 不可用时自动降级到 loop，
+    // 以保持“资源缺失时仍可播放”的行为一致性。
+    // TODO: 当 Raise/Raised_Static 补齐 start 段后，在此实现按 mode 的帧收集逻辑。
     Vec::new()
 }
 
