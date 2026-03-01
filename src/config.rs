@@ -29,6 +29,13 @@ pub const SHUTDOWN_ROOT: &str = "Shutdown";
 pub const TOUCH_HEAD_ROOT: &str = "Touch_Head";
 pub const TOUCH_BODY_ROOT: &str = "Touch_Body";
 pub const STATE_ROOT: &str = "State";
+pub const IDEL_ABC_COOLDOWN_MIN_TICKS: u32 = 180;
+pub const IDEL_ABC_COOLDOWN_MAX_TICKS: u32 = 360;
+pub const STATE_COOLDOWN_MIN_TICKS: u32 = 180;
+pub const STATE_COOLDOWN_MAX_TICKS: u32 = 360;
+pub const STATE_B_LOOP_MIN: u32 = 4;
+pub const STATE_B_LOOP_MAX: u32 = 6;
+pub const STATE_B_FRAME_HOLD_TICKS: u32 = 1;
 
 // 调试：面板数值控制
 pub const PANEL_BASIC_STAT_MAX: u32 = 100;
@@ -176,6 +183,13 @@ pub struct AnimationPathConfig {
 	pub touch_head_root: String,
 	pub touch_body_root: String,
 	pub state_root: String,
+	pub idel_abc_cooldown_min_ticks: u32,
+	pub idel_abc_cooldown_max_ticks: u32,
+	pub state_cooldown_min_ticks: u32,
+	pub state_cooldown_max_ticks: u32,
+	pub state_b_loop_min: u32,
+	pub state_b_loop_max: u32,
+	pub state_b_frame_hold_ticks: u32,
 }
 
 impl Default for AnimationPathConfig {
@@ -197,6 +211,13 @@ impl Default for AnimationPathConfig {
 			touch_head_root: TOUCH_HEAD_ROOT.to_string(),
 			touch_body_root: TOUCH_BODY_ROOT.to_string(),
 			state_root: STATE_ROOT.to_string(),
+			idel_abc_cooldown_min_ticks: IDEL_ABC_COOLDOWN_MIN_TICKS,
+			idel_abc_cooldown_max_ticks: IDEL_ABC_COOLDOWN_MAX_TICKS,
+			state_cooldown_min_ticks: STATE_COOLDOWN_MIN_TICKS,
+			state_cooldown_max_ticks: STATE_COOLDOWN_MAX_TICKS,
+			state_b_loop_min: STATE_B_LOOP_MIN,
+			state_b_loop_max: STATE_B_LOOP_MAX,
+			state_b_frame_hold_ticks: STATE_B_FRAME_HOLD_TICKS,
 		}
 	}
 }
@@ -251,6 +272,19 @@ impl AnimationPathConfig {
 			self.default_happy_idle_variants = defaults.default_happy_idle_variants;
 		}
 
+		self.idel_abc_cooldown_min_ticks = self.idel_abc_cooldown_min_ticks.max(1);
+		self.idel_abc_cooldown_max_ticks = self
+			.idel_abc_cooldown_max_ticks
+			.max(self.idel_abc_cooldown_min_ticks);
+
+		self.state_cooldown_min_ticks = self.state_cooldown_min_ticks.max(1);
+		self.state_cooldown_max_ticks = self
+			.state_cooldown_max_ticks
+			.max(self.state_cooldown_min_ticks);
+
+		self.state_b_loop_min = self.state_b_loop_min.max(1);
+		self.state_b_loop_max = self.state_b_loop_max.max(self.state_b_loop_min);
+
 		self
 	}
 }
@@ -270,6 +304,13 @@ struct AnimationPathConfigPartial {
 	touch_head_root: Option<String>,
 	touch_body_root: Option<String>,
 	state_root: Option<String>,
+	idel_abc_cooldown_min_ticks: Option<u32>,
+	idel_abc_cooldown_max_ticks: Option<u32>,
+	state_cooldown_min_ticks: Option<u32>,
+	state_cooldown_max_ticks: Option<u32>,
+	state_b_loop_min: Option<u32>,
+	state_b_loop_max: Option<u32>,
+	state_b_frame_hold_ticks: Option<u32>,
 }
 
 impl AnimationPathConfigPartial {
@@ -312,6 +353,27 @@ impl AnimationPathConfigPartial {
 		}
 		if let Some(value) = self.state_root {
 			base.state_root = value;
+		}
+		if let Some(value) = self.idel_abc_cooldown_min_ticks {
+			base.idel_abc_cooldown_min_ticks = value;
+		}
+		if let Some(value) = self.idel_abc_cooldown_max_ticks {
+			base.idel_abc_cooldown_max_ticks = value;
+		}
+		if let Some(value) = self.state_cooldown_min_ticks {
+			base.state_cooldown_min_ticks = value;
+		}
+		if let Some(value) = self.state_cooldown_max_ticks {
+			base.state_cooldown_max_ticks = value;
+		}
+		if let Some(value) = self.state_b_loop_min {
+			base.state_b_loop_min = value;
+		}
+		if let Some(value) = self.state_b_loop_max {
+			base.state_b_loop_max = value;
+		}
+		if let Some(value) = self.state_b_frame_hold_ticks {
+			base.state_b_frame_hold_ticks = value;
 		}
 
 		base

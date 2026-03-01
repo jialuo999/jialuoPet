@@ -6,7 +6,7 @@ use crate::stats::PetMode;
 use super::AnimationPlayer;
 use crate::animation::assets::{
     body_asset_path, collect_default_happy_idle_variants, collect_default_mode_idle_variants,
-    load_frames_with_fallback, pseudo_random_index, select_default_files_for_mode, Segment,
+    choose_idle_abc_sequence, pseudo_random_index, select_default_files_for_mode,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,6 +34,8 @@ pub(crate) struct DefaultIdlePlayer {
     c_files: Vec<PathBuf>,
     idle_abc_just_finished: bool,
     idle_abc_cooldown_ticks: u32,
+    idle_abc_cooldown_min_ticks: u32,
+    idle_abc_cooldown_max_ticks: u32,
 }
 
 impl DefaultIdlePlayer {
@@ -57,10 +59,14 @@ impl DefaultIdlePlayer {
         );
 
         let idle_root = body_asset_path(&config.assets_body_root, "IDEL");
-        let a_files = load_frames_with_fallback(&idle_root, mode, Segment::A);
-        let b_files = load_frames_with_fallback(&idle_root, mode, Segment::B);
-        let c_files = load_frames_with_fallback(&idle_root, mode, Segment::C);
-
+        let idle_abc_cooldown_min_ticks = config.idel_abc_cooldown_min_ticks;
+        let idle_abc_cooldown_max_ticks = config
+            .idel_abc_cooldown_max_ticks
+            .max(idle_abc_cooldown_min_ticks);
+        let idle_abc_cooldown_ticks = {
+            let span = (idle_abc_cooldown_max_ticks - idle_abc_cooldown_min_ticks) as usize + 1;
+            idle_abc_cooldown_min_ticks + pseudo_random_index(span) as u32
+        };
         Ok(Self {
             config: config.clone(),
             current_mode: mode,
@@ -73,16 +79,21 @@ impl DefaultIdlePlayer {
             default_index: 0,
             phase: IdlePhase::Default,
             tick: 0,
-            a_files,
-            b_files,
-            c_files,
+            a_files: Vec::new(),
+            b_files: Vec::new(),
+            c_files: Vec::new(),
             idle_abc_just_finished: false,
-            idle_abc_cooldown_ticks: Self::choose_idle_abc_cooldown(),
+            idle_abc_cooldown_ticks,
+            idle_abc_cooldown_min_ticks,
+            idle_abc_cooldown_max_ticks,
         })
     }
 
-    fn choose_idle_abc_cooldown() -> u32 {
-        180 + pseudo_random_index(181) as u32
+    fn choose_idle_abc_cooldown(&self) -> u32 {
+        let min_ticks = self.idle_abc_cooldown_min_ticks;
+        let max_ticks = self.idle_abc_cooldown_max_ticks.max(min_ticks);
+        let span = (max_ticks - min_ticks) as usize + 1;
+        min_ticks + pseudo_random_index(span) as u32
     }
 
     fn refresh_selection(&mut self) {
@@ -102,10 +113,6 @@ impl DefaultIdlePlayer {
         self.tick = 0;
         self.default_index = 0;
         self.default_files.first().cloned()
-    }
-
-    fn can_trigger_idle_abc(&self) -> bool {
-        !self.a_files.is_empty() && !self.b_files.is_empty()
     }
 
     fn next_default_frame(&mut self) -> Option<PathBuf> {
@@ -145,7 +152,12 @@ impl AnimationPlayer for DefaultIdlePlayer {
                     return self.next_default_frame();
                 }
 
-                if self.can_trigger_idle_abc() {
+                if let Some((a_files, b_files, c_files)) =
+                    choose_idle_abc_sequence(&self.idle_root, self.current_mode)
+                {
+                    self.a_files = a_files;
+                    self.b_files = b_files;
+                    self.c_files = c_files;
                     self.phase = IdlePhase::A { index: 0 };
                     return self.a_files.first().cloned().or_else(|| self.next_default_frame());
                 }
@@ -213,7 +225,7 @@ impl AnimationPlayer for DefaultIdlePlayer {
                     self.phase = IdlePhase::Default;
                     self.default_index = 0;
                     self.idle_abc_just_finished = true;
-                    self.idle_abc_cooldown_ticks = Self::choose_idle_abc_cooldown();
+                    self.idle_abc_cooldown_ticks = self.choose_idle_abc_cooldown();
                     return self.default_files.first().cloned();
                 }
 
@@ -226,7 +238,7 @@ impl AnimationPlayer for DefaultIdlePlayer {
                     self.phase = IdlePhase::Default;
                     self.default_index = 0;
                     self.idle_abc_just_finished = true;
-                    self.idle_abc_cooldown_ticks = Self::choose_idle_abc_cooldown();
+                    self.idle_abc_cooldown_ticks = self.choose_idle_abc_cooldown();
                     self.default_files.first().cloned()
                 }
             }
@@ -237,7 +249,7 @@ impl AnimationPlayer for DefaultIdlePlayer {
         self.phase = IdlePhase::Default;
         self.tick = 0;
         self.idle_abc_just_finished = false;
-        self.idle_abc_cooldown_ticks = Self::choose_idle_abc_cooldown();
+        self.idle_abc_cooldown_ticks = self.choose_idle_abc_cooldown();
     }
 
     fn reload(&mut self, mode: PetMode) {
@@ -248,13 +260,13 @@ impl AnimationPlayer for DefaultIdlePlayer {
         self.default_poor_condition_variants =
             collect_default_mode_idle_variants(&self.config, PetMode::PoorCondition);
         self.default_ill_variants = collect_default_mode_idle_variants(&self.config, PetMode::Ill);
-        self.a_files = load_frames_with_fallback(&self.idle_root, mode, Segment::A);
-        self.b_files = load_frames_with_fallback(&self.idle_root, mode, Segment::B);
-        self.c_files = load_frames_with_fallback(&self.idle_root, mode, Segment::C);
+        self.a_files.clear();
+        self.b_files.clear();
+        self.c_files.clear();
         self.phase = IdlePhase::Default;
         self.tick = 0;
         self.idle_abc_just_finished = false;
-        self.idle_abc_cooldown_ticks = Self::choose_idle_abc_cooldown();
+        self.idle_abc_cooldown_ticks = self.choose_idle_abc_cooldown();
         self.refresh_selection();
     }
 }

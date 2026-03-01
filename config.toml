@@ -39,3 +39,18 @@ shutdown_root = "Shutdown"
 touch_head_root = "Touch_Head"
 touch_body_root = "Touch_Body"
 state_root = "State"
+
+# IDEL ABC 触发冷却区间（tick，130ms/tick）180，360
+idel_abc_cooldown_min_ticks = 10
+idel_abc_cooldown_max_ticks = 30
+
+# State 触发冷却区间（tick，130ms/tick）
+state_cooldown_min_ticks = 10
+state_cooldown_max_ticks = 30
+
+# State B 段循环次数区间
+state_b_loop_min = 4
+state_b_loop_max = 6
+
+# State B 段每帧额外停留 tick（0=不减速）
+state_b_frame_hold_ticks = 1

@@ -241,7 +241,7 @@ pub fn load_carousel_images(
         pinch: PinchPlayer::new(pinch_root, current_mode),
         touch: TouchPlayer::new(touch_head_root, touch_body_root, current_mode),
         startup: StartupPlayer::new(startup_root, current_mode),
-        state: StatePlayer::new(state_root, current_mode),
+        state: StatePlayer::new(state_root, current_mode, &animation_config),
         default_idle: DefaultIdlePlayer::new(&animation_config, current_mode)?,
         state_suppress_ticks: 0,
     };

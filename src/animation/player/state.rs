@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::config::AnimationPathConfig;
 use crate::stats::PetMode;
 
 use super::AnimationPlayer;
@@ -23,34 +24,73 @@ pub(crate) struct StatePlayer {
     a_files: Vec<PathBuf>,
     b_files: Vec<PathBuf>,
     c_files: Vec<PathBuf>,
+    frame_hold_ticks: u8,
+    last_frame: Option<PathBuf>,
+    cooldown_min_ticks: u32,
+    cooldown_max_ticks: u32,
+    loop_min_count: u8,
+    loop_max_count: u8,
+    b_frame_hold_ticks: u8,
 }
 
 impl StatePlayer {
-    pub(crate) fn new(state_root: PathBuf, mode: PetMode) -> Self {
+    pub(crate) fn new(state_root: PathBuf, mode: PetMode, config: &AnimationPathConfig) -> Self {
         let state_variants = collect_state_variants(&state_root);
+        let cooldown_min_ticks = config.state_cooldown_min_ticks;
+        let cooldown_max_ticks = config
+            .state_cooldown_max_ticks
+            .max(cooldown_min_ticks);
+        let loop_min_count = config.state_b_loop_min.max(1).min(u8::MAX as u32) as u8;
+        let loop_max_count = config
+            .state_b_loop_max
+            .max(config.state_b_loop_min)
+            .max(1)
+            .min(u8::MAX as u32) as u8;
+        let b_frame_hold_ticks = config.state_b_frame_hold_ticks.min(u8::MAX as u32) as u8;
+
+        let cooldown_ticks = {
+            let span = (cooldown_max_ticks - cooldown_min_ticks) as usize + 1;
+            cooldown_min_ticks + pseudo_random_index(span) as u32
+        };
+
         Self {
             state_root,
             current_mode: mode,
             state_variants,
             phase: StatePhase::None,
-            cooldown_ticks: Self::choose_cooldown_ticks(),
+            cooldown_ticks,
             a_files: Vec::new(),
             b_files: Vec::new(),
             c_files: Vec::new(),
+            frame_hold_ticks: 0,
+            last_frame: None,
+            cooldown_min_ticks,
+            cooldown_max_ticks,
+            loop_min_count,
+            loop_max_count,
+            b_frame_hold_ticks,
         }
     }
 
     fn choose_loop_count(&self) -> u8 {
-        2 + pseudo_random_index(2) as u8
+        let min_count = self.loop_min_count;
+        let max_count = self.loop_max_count.max(min_count);
+        let span = (max_count - min_count) as usize + 1;
+        min_count + pseudo_random_index(span) as u8
     }
 
-    fn choose_cooldown_ticks() -> u32 {
-        180 + pseudo_random_index(181) as u32
+    fn choose_cooldown_ticks(&self) -> u32 {
+        let min_ticks = self.cooldown_min_ticks;
+        let max_ticks = self.cooldown_max_ticks.max(min_ticks);
+        let span = (max_ticks - min_ticks) as usize + 1;
+        min_ticks + pseudo_random_index(span) as u32
     }
 
     fn finish_cycle(&mut self) {
         self.phase = StatePhase::None;
-        self.cooldown_ticks = Self::choose_cooldown_ticks();
+        self.cooldown_ticks = self.choose_cooldown_ticks();
+        self.frame_hold_ticks = 0;
+        self.last_frame = None;
         self.a_files.clear();
         self.b_files.clear();
         self.c_files.clear();
@@ -105,12 +145,18 @@ impl AnimationPlayer for StatePlayer {
                 return None;
             }
             if !self.try_start_cycle() {
-                self.cooldown_ticks = Self::choose_cooldown_ticks();
+                self.cooldown_ticks = self.choose_cooldown_ticks();
                 return None;
             }
         }
 
-        match self.phase {
+        if self.frame_hold_ticks > 0 {
+            self.frame_hold_ticks -= 1;
+            return self.last_frame.clone();
+        }
+
+        let phase_before = self.phase;
+        let frame = match self.phase {
             StatePhase::None => None,
             StatePhase::A { mut index } => {
                 if self.a_files.is_empty() {
@@ -118,21 +164,21 @@ impl AnimationPlayer for StatePlayer {
                         index: 0,
                         remaining: self.choose_loop_count(),
                     };
-                    return self.b_files.first().cloned();
-                }
-
-                let frame = self.a_files.get(index).cloned();
-                let next = index + 1;
-                if next < self.a_files.len() {
-                    index = next;
-                    self.phase = StatePhase::A { index };
+                    self.b_files.first().cloned()
                 } else {
-                    self.phase = StatePhase::B {
-                        index: 0,
-                        remaining: self.choose_loop_count(),
-                    };
+                    let frame = self.a_files.get(index).cloned();
+                    let next = index + 1;
+                    if next < self.a_files.len() {
+                        index = next;
+                        self.phase = StatePhase::A { index };
+                    } else {
+                        self.phase = StatePhase::B {
+                            index: 0,
+                            remaining: self.choose_loop_count(),
+                        };
+                    }
+                    frame
                 }
-                frame
             }
             StatePhase::B {
                 mut index,
@@ -144,26 +190,26 @@ impl AnimationPlayer for StatePlayer {
                         return None;
                     }
                     self.phase = StatePhase::C { index: 0 };
-                    return self.c_files.first().cloned();
-                }
-
-                let frame = self.b_files.get(index).cloned();
-                let next = index + 1;
-                if next < self.b_files.len() {
-                    index = next;
-                    self.phase = StatePhase::B { index, remaining };
-                } else if remaining > 1 {
-                    remaining -= 1;
-                    self.phase = StatePhase::B {
-                        index: 0,
-                        remaining,
-                    };
-                } else if self.c_files.is_empty() {
-                    self.finish_cycle();
+                    self.c_files.first().cloned()
                 } else {
-                    self.phase = StatePhase::C { index: 0 };
+                    let frame = self.b_files.get(index).cloned();
+                    let next = index + 1;
+                    if next < self.b_files.len() {
+                        index = next;
+                        self.phase = StatePhase::B { index, remaining };
+                    } else if remaining > 1 {
+                        remaining -= 1;
+                        self.phase = StatePhase::B {
+                            index: 0,
+                            remaining,
+                        };
+                    } else if self.c_files.is_empty() {
+                        self.finish_cycle();
+                    } else {
+                        self.phase = StatePhase::C { index: 0 };
+                    }
+                    frame
                 }
-                frame
             }
             StatePhase::C { mut index } => {
                 if self.c_files.is_empty() {
@@ -181,7 +227,15 @@ impl AnimationPlayer for StatePlayer {
                 }
                 frame
             }
-        }
+        };
+
+        self.last_frame = frame.clone();
+        self.frame_hold_ticks = if matches!(phase_before, StatePhase::B { .. }) {
+            self.b_frame_hold_ticks
+        } else {
+            0
+        };
+        frame
     }
 
     fn interrupt(&mut self, skip_to_end: bool) {
@@ -192,7 +246,9 @@ impl AnimationPlayer for StatePlayer {
         }
 
         self.phase = StatePhase::None;
-        self.cooldown_ticks = Self::choose_cooldown_ticks();
+        self.cooldown_ticks = self.choose_cooldown_ticks();
+        self.frame_hold_ticks = 0;
+        self.last_frame = None;
         self.a_files.clear();
         self.b_files.clear();
         self.c_files.clear();
@@ -202,7 +258,9 @@ impl AnimationPlayer for StatePlayer {
         self.current_mode = mode;
         self.state_variants = collect_state_variants(&self.state_root);
         self.phase = StatePhase::None;
-        self.cooldown_ticks = Self::choose_cooldown_ticks();
+        self.cooldown_ticks = self.choose_cooldown_ticks();
+        self.frame_hold_ticks = 0;
+        self.last_frame = None;
         self.a_files.clear();
         self.b_files.clear();
         self.c_files.clear();

@@ -399,6 +399,33 @@ pub(crate) fn load_frames_with_fallback(root: &Path, mode: PetMode, segment: Seg
     variants.swap_remove(pseudo_random_index(variants.len()))
 }
 
+pub(crate) fn choose_idle_abc_sequence(
+    idle_root: &Path,
+    mode: PetMode,
+) -> Option<(Vec<PathBuf>, Vec<PathBuf>, Vec<PathBuf>)> {
+    let family_roots = collect_dir_paths(idle_root);
+    if family_roots.is_empty() {
+        return None;
+    }
+
+    let mut candidates = Vec::new();
+    for family_root in family_roots {
+        let a_files = load_frames_with_fallback(&family_root, mode, Segment::A);
+        let b_files = load_frames_with_fallback(&family_root, mode, Segment::B);
+        if a_files.is_empty() || b_files.is_empty() {
+            continue;
+        }
+        let c_files = load_frames_with_fallback(&family_root, mode, Segment::C);
+        candidates.push((a_files, b_files, c_files));
+    }
+
+    if candidates.is_empty() {
+        None
+    } else {
+        Some(candidates.swap_remove(pseudo_random_index(candidates.len())))
+    }
+}
+
 pub(crate) fn collect_drag_raise_loop_files(
     raise_dynamic_root: &Path,
     mode: PetMode,
