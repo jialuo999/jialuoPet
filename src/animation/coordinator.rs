@@ -9,16 +9,17 @@ use crate::config::{load_animation_path_config, CAROUSEL_INTERVAL_MS};
 use crate::input_region::setup_image_input_region;
 use crate::stats_panel::{PetMode, PetStatsService};
 
-use super::assets::body_asset_path;
+use super::assets::{body_asset_path, pseudo_random_index};
 use super::player::{
-    AnimationPlayer, DefaultIdlePlayer, DragRaisePlayer, PinchPlayer, ShutdownPlayer,
+    AnimationPlayer, DefaultIdlePlayer, DragRaisePlayer, IdlePlayer, PinchPlayer, ShutdownPlayer,
     StartupPlayer, TouchPlayer,
 };
 use super::requests::{
-    consume_requests, set_shutdown_animation_finished, AnimationRequests, DRAG_ANIM_END_REQUESTED,
-    DRAG_ANIM_LOOP_REQUESTED, DRAG_ANIM_START_REQUESTED, PINCH_ANIM_END_REQUESTED,
-    PINCH_ANIM_LOOP_REQUESTED, PINCH_ANIM_START_REQUESTED, SHUTDOWN_ANIM_REQUESTED,
-    TOUCH_ANIM_BODY_REQUESTED, TOUCH_ANIM_HEAD_REQUESTED,
+    consume_requests, request_idle_animation, set_shutdown_animation_finished, AnimationRequests,
+    DRAG_ANIM_END_REQUESTED, DRAG_ANIM_LOOP_REQUESTED, DRAG_ANIM_START_REQUESTED,
+    IDLE_ANIM_REQUESTED, PINCH_ANIM_END_REQUESTED, PINCH_ANIM_LOOP_REQUESTED,
+    PINCH_ANIM_START_REQUESTED, SHUTDOWN_ANIM_REQUESTED, TOUCH_ANIM_BODY_REQUESTED,
+    TOUCH_ANIM_HEAD_REQUESTED,
 };
 
 struct PlayerSet {
@@ -27,6 +28,7 @@ struct PlayerSet {
     drag_raise: DragRaisePlayer,
     pinch: PinchPlayer,
     touch: TouchPlayer,
+    idle: IdlePlayer,
     startup: StartupPlayer,
     default_idle: DefaultIdlePlayer,
 }
@@ -38,6 +40,7 @@ impl PlayerSet {
         self.drag_raise.reload(mode);
         self.pinch.reload(mode);
         self.touch.reload(mode);
+        self.idle.reload(mode);
         self.shutdown.reload(mode);
     }
 
@@ -55,6 +58,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         players.drag_raise.stop();
         players.pinch.stop();
         players.touch.stop();
+        players.idle.stop();
         players.startup.stop();
         players.shutdown.start();
         return;
@@ -66,6 +70,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
 
     match reqs.drag {
         DRAG_ANIM_START_REQUESTED => {
+            players.idle.stop();
             players.drag_raise.start(&mut players.pinch, &mut players.touch, &mut players.startup);
         }
         DRAG_ANIM_LOOP_REQUESTED => {
@@ -80,6 +85,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     if !players.drag_raise.is_active() {
         match reqs.pinch {
             PINCH_ANIM_START_REQUESTED => {
+                players.idle.stop();
                 players.pinch.start(&mut players.touch, &mut players.startup);
             }
             PINCH_ANIM_LOOP_REQUESTED => {
@@ -94,10 +100,24 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
 
     if !players.drag_raise.is_active() && !players.pinch.is_active() {
         match reqs.touch {
-            TOUCH_ANIM_HEAD_REQUESTED => players.touch.start_head(&mut players.startup),
-            TOUCH_ANIM_BODY_REQUESTED => players.touch.start_body(&mut players.startup),
+            TOUCH_ANIM_HEAD_REQUESTED => {
+                players.idle.stop();
+                players.touch.start_head(&mut players.startup);
+            }
+            TOUCH_ANIM_BODY_REQUESTED => {
+                players.idle.stop();
+                players.touch.start_body(&mut players.startup);
+            }
             _ => {}
         }
+    }
+
+    if !players.drag_raise.is_active()
+        && !players.pinch.is_active()
+        && !players.touch.is_active()
+        && reqs.idle == IDLE_ANIM_REQUESTED
+    {
+        players.idle.start(&mut players.startup);
     }
 }
 
@@ -142,6 +162,14 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
             return frame;
         }
         players.touch.interrupt(true);
+        return players.default_idle.enter().unwrap_or_default();
+    }
+
+    if players.idle.is_active() {
+        if let Some(frame) = players.idle.next_frame() {
+            return frame;
+        }
+        players.idle.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
     }
 
@@ -194,12 +222,15 @@ pub fn load_carousel_images(
         &animation_config.touch_body_root,
     );
 
+    let idle_root = body_asset_path(&animation_config.assets_body_root, "IDEL");
+
     let mut players = PlayerSet {
         current_mode,
         shutdown: ShutdownPlayer::new(shutdown_root, current_mode),
         drag_raise: DragRaisePlayer::new(drag_raise_dynamic_root, drag_raise_static_root, current_mode),
         pinch: PinchPlayer::new(pinch_root, current_mode),
         touch: TouchPlayer::new(touch_head_root, touch_body_root, current_mode),
+        idle: IdlePlayer::new(idle_root, current_mode),
         startup: StartupPlayer::new(startup_root, current_mode),
         default_idle: DefaultIdlePlayer::new(&animation_config, current_mode)?,
     };
@@ -224,7 +255,23 @@ pub fn load_carousel_images(
     timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
         let next_path = {
             let mut players = state_clone.borrow_mut();
-            let reqs = consume_requests();
+            let mut reqs = consume_requests();
+
+            // 随机触发 IDLE 动画（约每 5 秒检查一次）
+            // 130ms * 40 约等于 5.2s
+            static mut TICK_COUNT: u32 = 0;
+            unsafe {
+                TICK_COUNT += 1;
+                if TICK_COUNT >= 40 {
+                    TICK_COUNT = 0;
+                    if pseudo_random_index(10) == 0 {
+                        request_idle_animation();
+                        // 立即更新 reqs 以响应刚发出的请求
+                        reqs.idle = IDLE_ANIM_REQUESTED;
+                    }
+                }
+            }
+
             maybe_update_mode(&mut players, &stats_service_clone);
             dispatch_requests(&mut players, reqs);
             advance_frame(&mut players)

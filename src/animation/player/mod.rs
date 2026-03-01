@@ -1,5 +1,6 @@
 mod default_idle;
 mod drag_raise;
+mod idle;
 mod pinch;
 mod shutdown;
 mod startup;
@@ -11,6 +12,7 @@ use crate::stats_panel::PetMode;
 
 pub(crate) use default_idle::DefaultIdlePlayer;
 pub(crate) use drag_raise::DragRaisePlayer;
+pub(crate) use idle::IdlePlayer;
 pub(crate) use pinch::PinchPlayer;
 pub(crate) use shutdown::ShutdownPlayer;
 pub(crate) use startup::StartupPlayer;
