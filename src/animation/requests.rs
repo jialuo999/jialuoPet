@@ -22,6 +22,7 @@ static PINCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(PINCH_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(SHUTDOWN_ANIM_IDLE);
 static TOUCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(TOUCH_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_FINISHED: AtomicBool = AtomicBool::new(false);
+static ANIMATION_CONFIG_RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 pub(crate) struct AnimationRequests {
     pub(crate) drag: u8,
@@ -63,6 +64,10 @@ pub fn request_touch_body_animation() {
     TOUCH_ANIMATION_PHASE.store(TOUCH_ANIM_BODY_REQUESTED, Ordering::Relaxed);
 }
 
+pub fn request_animation_config_reload() {
+    ANIMATION_CONFIG_RELOAD_REQUESTED.store(true, Ordering::Relaxed);
+}
+
 pub fn is_shutdown_animation_finished() -> bool {
     SHUTDOWN_ANIMATION_FINISHED.load(Ordering::Relaxed)
 }
@@ -78,4 +83,8 @@ pub(crate) fn consume_requests() -> AnimationRequests {
         shutdown: SHUTDOWN_ANIMATION_PHASE.swap(SHUTDOWN_ANIM_IDLE, Ordering::Relaxed),
         touch: TOUCH_ANIMATION_PHASE.swap(TOUCH_ANIM_IDLE, Ordering::Relaxed),
     }
+}
+
+pub(crate) fn consume_animation_config_reload_request() -> bool {
+    ANIMATION_CONFIG_RELOAD_REQUESTED.swap(false, Ordering::Relaxed)
 }

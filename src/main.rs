@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use animation::{
     is_shutdown_animation_finished, load_carousel_images, request_shutdown_animation,
+    request_animation_config_reload,
     request_touch_body_animation, request_touch_head_animation,
 };
 use config::{
@@ -118,6 +119,7 @@ fn build_ui(app: &Application) {
                 let panel_config = load_panel_debug_config();
                 stats_service.apply_panel_config(panel_config);
                 stats_panel.refresh();
+                request_animation_config_reload();
             }
 
             glib::ControlFlow::Continue
