@@ -322,12 +322,12 @@ pub(crate) fn collect_default_mode_idle_variants(
         .collect()
 }
 
-fn pick_random_variant(variants: &[Vec<PathBuf>]) -> Option<Vec<PathBuf>> {
-    if variants.is_empty() {
-        None
-    } else {
-        Some(variants[pseudo_random_index(variants.len())].clone())
+fn flatten_variants_in_order(variants: &[Vec<PathBuf>]) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for variant in variants {
+        files.extend(variant.iter().cloned());
     }
+    files
 }
 
 pub(crate) fn select_default_files_for_mode(
@@ -338,16 +338,22 @@ pub(crate) fn select_default_files_for_mode(
     ill_variants: &[Vec<PathBuf>],
 ) -> Vec<PathBuf> {
     let selected = match mode {
-        PetMode::Happy => pick_random_variant(happy_variants),
-        PetMode::Nomal => pick_random_variant(nomal_variants),
-        PetMode::PoorCondition => pick_random_variant(poor_condition_variants),
-        PetMode::Ill => pick_random_variant(ill_variants),
+        PetMode::Happy => flatten_variants_in_order(happy_variants),
+        PetMode::Nomal => flatten_variants_in_order(nomal_variants),
+        PetMode::PoorCondition => flatten_variants_in_order(poor_condition_variants),
+        PetMode::Ill => flatten_variants_in_order(ill_variants),
     };
 
-    selected
-        .or_else(|| pick_random_variant(nomal_variants))
-        .or_else(|| pick_random_variant(happy_variants))
-        .unwrap_or_default()
+    if !selected.is_empty() {
+        return selected;
+    }
+
+    let fallback_nomal = flatten_variants_in_order(nomal_variants);
+    if !fallback_nomal.is_empty() {
+        return fallback_nomal;
+    }
+
+    flatten_variants_in_order(happy_variants)
 }
 
 fn collect_segment_variants_for_mode(root: &Path, mode: PetMode, segment: Segment) -> Vec<Vec<PathBuf>> {
