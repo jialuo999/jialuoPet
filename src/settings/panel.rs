@@ -42,7 +42,13 @@ impl SettingsPanel {
         remember_position_check.set_active(initial_settings.remember_position);
         panel_box.append(&remember_position_check);
 
+        // 添加可扩展的空白区域，将按钮挤到底部
+        let spacer = Box::new(Orientation::Vertical, 0);
+        spacer.set_vexpand(true);
+        panel_box.append(&spacer);
+
         let actions_box = Box::new(Orientation::Horizontal, 8);
+        actions_box.set_halign(Align::End); // 按钮靠右对齐
         let save_button = Button::with_label("保存");
         let cancel_button = Button::with_label("取消");
         let exit_button = Button::with_label("退出");
