@@ -126,6 +126,7 @@ pub fn setup_input_probe(window: &ApplicationWindow, image: &Image) {
 pub fn setup_context_menu(
     image: &Image,
     on_panel_clicked: Rc<dyn Fn(i32, i32)>,
+    on_settings_clicked: Rc<dyn Fn()>,
     on_before_menu_popup: Rc<dyn Fn()>,
     on_restart_clicked: Rc<dyn Fn()>,
     on_quit_clicked: Rc<dyn Fn()>,
@@ -140,7 +141,25 @@ pub fn setup_context_menu(
     system_popover.set_autohide(false);
     system_popover.set_parent(image);
 
+    let last_click_pos = Rc::new(RefCell::new((0i32, 0i32)));
+
     let system_box = Box::new(Orientation::Vertical, 4);
+    let settings_button = Button::with_label("设置");
+    settings_button.set_halign(gtk4::Align::Fill);
+    {
+        let popover_for_click = popover.clone();
+        let system_popover_for_click = system_popover.clone();
+        let on_settings_clicked = on_settings_clicked.clone();
+        settings_button.connect_clicked(move |_| {
+            popover_for_click.popdown();
+            system_popover_for_click.popdown();
+            let on_settings_clicked = on_settings_clicked.clone();
+            glib::idle_add_local_once(move || {
+                on_settings_clicked();
+            });
+        });
+    }
+
     let restart_button = Button::with_label("重启桌宠");
     restart_button.set_halign(gtk4::Align::Fill);
     {
@@ -166,11 +185,10 @@ pub fn setup_context_menu(
             on_quit_clicked();
         });
     }
+    system_box.append(&settings_button);
     system_box.append(&restart_button);
     system_box.append(&quit_button);
     system_popover.set_child(Some(&system_box));
-
-    let last_click_pos = Rc::new(RefCell::new((0i32, 0i32)));
 
     let menu_box = Box::new(Orientation::Vertical, 4);
     for item in ["投喂", "面板", "互动", "系统"] {

@@ -107,11 +107,47 @@ fn is_in_pinch_rect(
     (min_x..=max_x).contains(&source_x) && (min_y..=max_y).contains(&source_y)
 }
 
+fn current_window_left_top(window: &ApplicationWindow) -> (i32, i32) {
+    let alloc = window.allocation();
+    let win_w = alloc.width().max(1);
+    let win_h = alloc.height().max(1);
+
+    let (mon_w, mon_h) = window
+        .surface()
+        .and_then(|surface| {
+            let display = surface.display();
+            display.monitor_at_surface(&surface).map(|monitor| {
+                let geometry = monitor.geometry();
+                (geometry.width(), geometry.height())
+            })
+        })
+        .unwrap_or((1920, 1080));
+
+    let left = if window.is_anchor(Edge::Left) {
+        window.margin(Edge::Left)
+    } else if window.is_anchor(Edge::Right) {
+        mon_w - win_w - window.margin(Edge::Right)
+    } else {
+        window.margin(Edge::Left)
+    };
+
+    let top = if window.is_anchor(Edge::Top) {
+        window.margin(Edge::Top)
+    } else if window.is_anchor(Edge::Bottom) {
+        mon_h - win_h - window.margin(Edge::Bottom)
+    } else {
+        window.margin(Edge::Top)
+    };
+
+    (left, top)
+}
+
 pub fn setup_long_press_drag(
     window: &ApplicationWindow,
     image: &Image,
     current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
     stats_service: PetStatsService,
+    on_drag_finished: Rc<dyn Fn(i32, i32)>,
 ) {
     #[derive(Clone, Copy)]
     struct DragState {
@@ -182,6 +218,8 @@ pub fn setup_long_press_drag(
     }
     {
         let state = state.clone();
+        let window = window.clone();
+        let on_drag_finished = on_drag_finished.clone();
         click.connect_released(move |_, _, _, _| {
             let mut drag_state = state.borrow_mut();
             let was_dragging = drag_state.drag_enabled;
@@ -193,6 +231,8 @@ pub fn setup_long_press_drag(
             drag_state.press_in_pinch_rect = false;
             drag_state.pinch_active = false;
             if was_dragging {
+                let (left, top) = current_window_left_top(&window);
+                on_drag_finished(left, top);
                 request_drag_raise_animation_end();
             }
             if was_pinching {

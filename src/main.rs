@@ -2,6 +2,7 @@ mod animation;
 mod config;
 mod drag;
 mod input_region;
+mod settings;
 mod stats;
 mod stats_panel;
 
@@ -26,6 +27,7 @@ use drag::setup_long_press_drag;
 use input_region::{
     setup_context_menu, setup_image_input_region, setup_input_probe, setup_touch_click_regions,
 };
+use settings::{SettingsPanel, SettingsStore, WindowPosition};
 use stats::PetStatsService;
 use stats_panel::StatsPanel;
 
@@ -34,6 +36,50 @@ enum PendingSystemAction {
     None,
     Quit,
     Restart,
+}
+
+fn current_window_left_top(window: &ApplicationWindow) -> (i32, i32) {
+    let alloc = window.allocation();
+    let win_w = alloc.width().max(1);
+    let win_h = alloc.height().max(1);
+
+    let (mon_w, mon_h) = window
+        .surface()
+        .and_then(|surface| {
+            let display = surface.display();
+            display.monitor_at_surface(&surface).map(|monitor| {
+                let geometry = monitor.geometry();
+                (geometry.width(), geometry.height())
+            })
+        })
+        .unwrap_or((1920, 1080));
+
+    let left = if window.is_anchor(Edge::Left) {
+        window.margin(Edge::Left)
+    } else if window.is_anchor(Edge::Right) {
+        mon_w - win_w - window.margin(Edge::Right)
+    } else {
+        window.margin(Edge::Left)
+    };
+
+    let top = if window.is_anchor(Edge::Top) {
+        window.margin(Edge::Top)
+    } else if window.is_anchor(Edge::Bottom) {
+        mon_h - win_h - window.margin(Edge::Bottom)
+    } else {
+        window.margin(Edge::Top)
+    };
+
+    (left, top)
+}
+
+fn apply_window_position(window: &ApplicationWindow, position: WindowPosition) {
+    window.set_anchor(Edge::Left, true);
+    window.set_anchor(Edge::Top, true);
+    window.set_anchor(Edge::Right, false);
+    window.set_anchor(Edge::Bottom, false);
+    window.set_margin(Edge::Left, position.left);
+    window.set_margin(Edge::Top, position.top);
 }
 
 fn main() {
@@ -81,6 +127,11 @@ fn build_ui(app: &Application) {
     window.set_margin(Edge::Top, 50);
     window.set_margin(Edge::Right, 20);
     window.set_margin(Edge::Bottom, 20);
+
+    let settings_store = Rc::new(SettingsStore::load());
+    if let Some(position) = settings_store.remembered_position_if_enabled() {
+        apply_window_position(&window, position);
+    }
 
     let current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(None));
     let stats_service = PetStatsService::from_panel_config(load_panel_debug_config(), 5.0);
@@ -137,7 +188,24 @@ fn build_ui(app: &Application) {
     // 诊断：记录窗口/图片是否收到点击事件
     setup_input_probe(&window, &image);
     // 长按图片不透明区域后可拖动窗口位置
-    setup_long_press_drag(&window, &image, current_pixbuf.clone(), stats_service.clone());
+    setup_long_press_drag(
+        &window,
+        &image,
+        current_pixbuf.clone(),
+        stats_service.clone(),
+        {
+            let settings_store = settings_store.clone();
+            Rc::new(move |left, top| {
+                if !settings_store.remember_position_enabled() {
+                    return;
+                }
+
+                if let Err(err) = settings_store.update_position(left, top) {
+                    eprintln!("保存窗口位置失败：{}", err);
+                }
+            })
+        },
+    );
     setup_touch_click_regions(
         &image,
         current_pixbuf.clone(),
@@ -153,12 +221,36 @@ fn build_ui(app: &Application) {
     {
         let stats_panel_for_panel_click = stats_panel.clone();
         let stats_panel_for_menu_popup = stats_panel.clone();
+        let settings_panel_for_menu_popup = {
+            let settings_store = settings_store.clone();
+            let window_for_save = window.clone();
+            Rc::new(SettingsPanel::new(
+                app,
+                &window,
+                settings_store.snapshot(),
+                Rc::new(move |remember_position| {
+                    if let Err(err) = settings_store.update_remember_position(remember_position) {
+                        eprintln!("保存设置失败：{}", err);
+                        return;
+                    }
+
+                    if remember_position {
+                        let (left, top) = current_window_left_top(&window_for_save);
+                        if let Err(err) = settings_store.update_position(left, top) {
+                            eprintln!("保存窗口位置失败：{}", err);
+                        }
+                    }
+                }),
+            ))
+        };
         let app_for_quit = app.clone();
         let pending_action = Rc::new(RefCell::new(PendingSystemAction::None));
 
         let request_system_action = {
             let pending_action = pending_action.clone();
             let app_for_quit = app_for_quit.clone();
+            let window_for_quit = window.clone();
+            let settings_store_for_quit = settings_store.clone();
             Rc::new(move |action: PendingSystemAction| {
                 if *pending_action.borrow() != PendingSystemAction::None {
                     return;
@@ -169,9 +261,18 @@ fn build_ui(app: &Application) {
 
                 let pending_action_for_timeout = pending_action.clone();
                 let app_for_timeout = app_for_quit.clone();
+                let window_for_timeout = window_for_quit.clone();
+                let settings_store_for_timeout = settings_store_for_quit.clone();
                 glib::timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
                     if !is_shutdown_animation_finished() {
                         return glib::ControlFlow::Continue;
+                    }
+
+                    if settings_store_for_timeout.remember_position_enabled() {
+                        let (left, top) = current_window_left_top(&window_for_timeout);
+                        if let Err(err) = settings_store_for_timeout.update_position(left, top) {
+                            eprintln!("退出前保存窗口位置失败：{}", err);
+                        }
                     }
 
                     let action = *pending_action_for_timeout.borrow();
@@ -210,11 +311,27 @@ fn build_ui(app: &Application) {
             })
         };
 
-        setup_context_menu(&image, Rc::new(move |x, y| {
-            stats_panel_for_panel_click.toggle_at(x, y);
-        }), Rc::new(move || {
-            stats_panel_for_menu_popup.hide();
-        }), request_restart, request_quit);
+        setup_context_menu(
+            &image,
+            Rc::new(move |x, y| {
+                stats_panel_for_panel_click.toggle_at(x, y);
+            }),
+            {
+                let settings_panel_for_menu_popup = settings_panel_for_menu_popup.clone();
+                Rc::new(move || {
+                    settings_panel_for_menu_popup.show();
+                })
+            },
+            {
+                let settings_panel_for_menu_popup = settings_panel_for_menu_popup.clone();
+                Rc::new(move || {
+                    stats_panel_for_menu_popup.hide();
+                    settings_panel_for_menu_popup.hide();
+                })
+            },
+            request_restart,
+            request_quit,
+        );
     }
 
     let dismiss_panel_click = GestureClick::new();
