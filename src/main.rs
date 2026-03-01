@@ -94,6 +94,14 @@ fn build_ui(app: &Application) {
             std::process::exit(1);
         }
     };
+
+    let logic_interval_secs = stats_service.logic_interval_secs();
+    let stats_interval_ms = (logic_interval_secs * 1000.0) as u64;
+    let mut stats_service_for_tick = stats_service.clone();
+    glib::timeout_add_local(Duration::from_millis(stats_interval_ms), move || {
+        stats_service_for_tick.on_tick(logic_interval_secs);
+        glib::ControlFlow::Continue
+    });
     
     // 设置窗口子部件，透明背景自动应用
     window.set_child(Some(&image));

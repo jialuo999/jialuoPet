@@ -231,13 +231,11 @@ pub fn load_carousel_images(
 
     let state = Rc::new(RefCell::new(players));
     let state_clone = state.clone();
-    let mut stats_service_clone = stats_service.clone();
+    let stats_service_clone = stats_service.clone();
     let image_clone = image.clone();
     let window_clone = window.clone();
 
     timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
-        stats_service_clone.on_tick(CAROUSEL_INTERVAL_MS as f64 / 1000.0);
-
         let next_path = {
             let mut players = state_clone.borrow_mut();
             if consume_animation_config_reload_request() {

@@ -5,14 +5,14 @@ experience_max = 100
 level_max = 100
 
 # 面板默认值（配置热更新时会立即应用）
-default_stamina = 100
-default_satiety = 100
-default_thirst = 100
-default_mood = 70
-default_health = 60
-default_affinity = 100
-default_experience = 100
-default_level = 100
+default_stamina = 80
+default_satiety = 80
+default_thirst = 80
+default_mood = 80
+default_health = 80
+default_affinity = 80
+default_experience = 80
+default_level = 80
 
 [animation]
 # 动画资源根目录（相对/绝对路径都可）

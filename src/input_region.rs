@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use crate::config::{DRAG_LONG_PRESS_MS, INPUT_DEBUG_LOG};
-use crate::stats::{PetMode, PetStatsService};
+use crate::stats::{InteractType, PetMode, PetStatsService};
 
 const TOUCH_HEAD_RECT_X1: i32 = 667;
 const TOUCH_HEAD_RECT_Y1: i32 = 113;
@@ -354,6 +354,8 @@ pub fn setup_touch_click_regions(
             if (head_min_x..=head_max_x).contains(&source_x)
                 && (head_min_y..=head_max_y).contains(&source_y)
             {
+                let mut stats_service_for_interact = stats_service.clone();
+                stats_service_for_interact.on_interact(InteractType::TouchHead);
                 on_head_clicked();
                 return;
             }
@@ -361,6 +363,8 @@ pub fn setup_touch_click_regions(
             if (body_min_x..=body_max_x).contains(&source_x)
                 && (body_min_y..=body_max_y).contains(&source_y)
             {
+                let mut stats_service_for_interact = stats_service.clone();
+                stats_service_for_interact.on_interact(InteractType::TouchBody);
                 on_body_clicked();
             }
         });

@@ -6,11 +6,19 @@ pub enum PetMode {
     Ill,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InteractType {
+    TouchHead,
+    TouchBody,
+    Pinch,
+}
+
 #[derive(Debug, Clone)]
 pub struct PetStats {
     pub health: f64,
     pub feeling: f64,
     pub feeling_max: f64,
+    pub likability_max: f64,
     pub strength: f64,
     pub strength_max: f64,
     pub strength_food: f64,
@@ -24,12 +32,14 @@ impl Default for PetStats {
     fn default() -> Self {
         let level = 1;
         let feeling_max = Self::feeling_max_for_level(level);
+        let likability_max = Self::likability_max_for_level(level);
         let strength_max = Self::strength_max_for_level(level);
 
         Self {
             health: 100.0,
             feeling: 100.0,
             feeling_max,
+            likability_max,
             strength: strength_max,
             strength_max,
             strength_food: 100.0,
@@ -101,5 +111,9 @@ impl PetStats {
     pub fn strength_max_for_level(level: u32) -> f64 {
         let level_f = level as f64;
         100.0 + (level_f * (1.0 + level_f)).powf(0.75) * 4.0
+    }
+
+    pub fn likability_max_for_level(level: u32) -> f64 {
+        90.0 + level as f64 * 10.0
     }
 }

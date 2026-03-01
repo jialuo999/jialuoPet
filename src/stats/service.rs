@@ -3,7 +3,8 @@ use std::rc::Rc;
 
 use crate::config::PanelDebugConfig;
 
-use super::model::{PetMode, PetStats};
+use super::food::FoodItem;
+use super::model::{InteractType, PetMode, PetStats};
 
 const LOGIC_INTERVAL_MIN_SECS: f64 = 5.0;
 const LOGIC_INTERVAL_MAX_SECS: f64 = 60.0;
@@ -15,6 +16,13 @@ const DECAY_BALANCE_FOOD_DRINK: f64 = 1.0;
 const DECAY_BALANCE_STRENGTH: f64 = 0.8;
 const DECAY_BALANCE_FEELING: f64 = 0.5;
 const DECAY_BALANCE_HEALTH: f64 = 0.3;
+const TOUCH_HEAD_STRENGTH_COST: f64 = 5.0;
+const TOUCH_HEAD_FEELING_GAIN: f64 = 10.0;
+const TOUCH_BODY_STRENGTH_COST: f64 = 10.0;
+const TOUCH_BODY_FEELING_GAIN: f64 = 6.0;
+const PINCH_STRENGTH_COST: f64 = 4.0;
+const PINCH_FEELING_GAIN_POSITIVE: f64 = 8.0;
+const PINCH_FEELING_GAIN_NEGATIVE: f64 = -5.0;
 
 #[derive(Debug, Clone, Copy)]
 struct PanelLimits {
@@ -134,13 +142,24 @@ impl PetStatsService {
         stats.strength_drink -= DECAY_BALANCE_FOOD_DRINK * scale;
         stats.strength -= DECAY_BALANCE_STRENGTH * scale;
 
-        if stats.strength < 30.0 {
-            stats.feeling -= DECAY_BALANCE_FEELING * scale;
-        }
+        let feeling_decay = if stats.strength < 30.0 {
+            DECAY_BALANCE_FEELING * scale
+        } else {
+            0.0
+        };
+        let raw_feeling = stats.feeling - feeling_decay;
+        stats.feeling = raw_feeling;
 
-        if stats.feeling < 20.0 && stats.strength_food < 10.0 && stats.strength_drink < 10.0 {
+        if raw_feeling < 20.0 && stats.strength_food < 10.0 && stats.strength_drink < 10.0 {
             stats.health -= DECAY_BALANCE_HEALTH * scale;
         }
+        drop(stats);
+
+        if raw_feeling < 0.0 {
+            self.apply_likability_gain(raw_feeling / 2.0);
+        }
+
+        let mut stats = self.stats.borrow_mut();
 
         clamp_stats(&mut stats, basic_stat_max);
         apply_level_up_if_needed(&mut stats);
@@ -148,31 +167,86 @@ impl PetStatsService {
     }
 
     #[allow(dead_code)]
-    pub fn on_feed(&mut self, food_strength: f64, food_drink: f64, food_feeling: f64) {
+    pub fn on_feed(&mut self, food: &FoodItem) {
         let basic_stat_max = self.basic_stat_max();
-        let mut stats = self.stats.borrow_mut();
-        let bonus = likability_bonus(stats.likability);
+
+        self.apply_likability_gain(food.likability);
+
+        let bonus = {
+            let stats = self.stats.borrow();
+            likability_bonus(stats.likability)
+        };
         let recover_factor = 1.0 + bonus;
 
-        stats.strength_food += food_strength * recover_factor;
-        stats.strength_drink += food_drink * recover_factor;
-        stats.feeling += food_feeling * recover_factor;
+        self.apply_feeling_gain(food.feeling * recover_factor);
+
+        let mut stats = self.stats.borrow_mut();
+        stats.strength_food += food.strength_food * recover_factor;
+        stats.strength_drink += food.strength_drink * recover_factor;
 
         clamp_stats(&mut stats, basic_stat_max);
     }
 
     #[allow(dead_code)]
-    pub fn on_interact(&mut self) {
+    pub fn on_interact(&mut self, interact_type: InteractType) {
         let basic_stat_max = self.basic_stat_max();
-        let mut stats = self.stats.borrow_mut();
 
-        let level_f = stats.level as f64;
-        stats.feeling += 5.0 * (1.0 + level_f / 10.0);
-        stats.exp += 1.0 * level_f;
+        let (strength_cost, feeling_gain) = match interact_type {
+            InteractType::TouchHead => (TOUCH_HEAD_STRENGTH_COST, TOUCH_HEAD_FEELING_GAIN),
+            InteractType::TouchBody => (TOUCH_BODY_STRENGTH_COST, TOUCH_BODY_FEELING_GAIN),
+            InteractType::Pinch => {
+                let feeling_delta = match self.cal_mode() {
+                    PetMode::Happy | PetMode::Nomal => PINCH_FEELING_GAIN_POSITIVE,
+                    PetMode::PoorCondition | PetMode::Ill => PINCH_FEELING_GAIN_NEGATIVE,
+                };
+                (PINCH_STRENGTH_COST, feeling_delta)
+            }
+        };
+
+        {
+            let mut stats = self.stats.borrow_mut();
+            stats.strength = (stats.strength - strength_cost).clamp(0.0, stats.strength_max);
+            let level_f = stats.level as f64;
+            stats.exp += 1.0 * level_f;
+        }
+
+        self.apply_feeling_gain(feeling_gain);
+
+        let mut stats = self.stats.borrow_mut();
 
         clamp_stats(&mut stats, basic_stat_max);
         apply_level_up_if_needed(&mut stats);
         clamp_stats(&mut stats, basic_stat_max);
+    }
+
+    fn apply_feeling_gain(&mut self, feeling_gain: f64) {
+        let actual_gain = {
+            let stats = self.stats.borrow();
+            if feeling_gain < 0.0 {
+                feeling_gain.max(-stats.feeling)
+            } else {
+                feeling_gain
+            }
+        };
+
+        self.apply_likability_gain(actual_gain);
+
+        {
+            let mut stats = self.stats.borrow_mut();
+            stats.feeling = (stats.feeling + feeling_gain).clamp(0.0, stats.feeling_max);
+        }
+    }
+
+    fn apply_likability_gain(&mut self, delta: f64) {
+        let mut stats = self.stats.borrow_mut();
+        let new_val = stats.likability + delta;
+        if new_val > stats.likability_max {
+            let overflow = new_val - stats.likability_max;
+            stats.likability = stats.likability_max;
+            stats.health = (stats.health + overflow).min(100.0);
+        } else {
+            stats.likability = new_val.clamp(0.0, stats.likability_max);
+        }
     }
 
     pub fn cal_mode(&self) -> PetMode {
@@ -190,6 +264,7 @@ fn apply_level_up_if_needed(stats: &mut PetStats) {
         stats.exp -= needed;
         stats.level = stats.level.saturating_add(1);
         stats.feeling_max = PetStats::feeling_max_for_level(stats.level);
+        stats.likability_max = PetStats::likability_max_for_level(stats.level);
         stats.strength_max = PetStats::strength_max_for_level(stats.level);
     }
 }
@@ -202,7 +277,7 @@ fn clamp_stats(stats: &mut PetStats, basic_stat_max: f64) {
     stats.strength = stats.strength.clamp(0.0, stats.strength_max.max(0.0));
     stats.strength_food = stats.strength_food.clamp(0.0, base_max);
     stats.strength_drink = stats.strength_drink.clamp(0.0, base_max);
-    stats.likability = stats.likability.clamp(0.0, base_max);
+    stats.likability = stats.likability.clamp(0.0, stats.likability_max.max(0.0));
     stats.exp = stats.exp.max(0.0);
 }
 
@@ -214,6 +289,7 @@ fn panel_config_to_stats(panel_config: &PanelDebugConfig) -> PetStats {
         health: panel_config.default_health as f64,
         feeling: panel_config.default_mood as f64,
         feeling_max: basic_stat_max,
+        likability_max: PetStats::likability_max_for_level(level),
         strength: panel_config.default_stamina as f64,
         strength_max: basic_stat_max,
         strength_food: panel_config.default_satiety as f64,

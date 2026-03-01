@@ -11,7 +11,7 @@ use crate::animation::{
     request_pinch_animation_start,
 };
 use crate::config::{DRAG_ALLOW_OFFSCREEN, DRAG_LONG_PRESS_MS};
-use crate::stats::{PetMode, PetStatsService};
+use crate::stats::{InteractType, PetMode, PetStatsService};
 
 const DRAG_FOCUS_PIXEL_X: i32 = 581;
 const DRAG_FOCUS_PIXEL_Y: i32 = 257;
@@ -152,6 +152,7 @@ pub fn setup_long_press_drag(
         let state = state.clone();
         let image = image.clone();
         let current_pixbuf = current_pixbuf.clone();
+        let stats_service = stats_service.clone();
         click.connect_pressed(move |_, _, press_x, press_y| {
             let mut drag_state = state.borrow_mut();
             drag_state.is_pressed = true;
@@ -163,6 +164,7 @@ pub fn setup_long_press_drag(
             drag_state.pinch_active = false;
 
             let state_for_timer = state.clone();
+            let mut stats_service_for_timer = stats_service.clone();
             glib::timeout_add_local_once(Duration::from_millis(DRAG_LONG_PRESS_MS), move || {
                 let mut drag_state = state_for_timer.borrow_mut();
                 if drag_state.is_pressed
@@ -172,6 +174,7 @@ pub fn setup_long_press_drag(
                     && !drag_state.pinch_active
                 {
                     drag_state.pinch_active = true;
+                    stats_service_for_timer.on_interact(InteractType::Pinch);
                     request_pinch_animation_start();
                 }
             });
