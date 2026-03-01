@@ -277,9 +277,18 @@ pub(crate) fn collect_default_happy_idle_variants(
     let mut variants = Vec::new();
     for variant in &animation_config.default_happy_idle_variants {
         let dir = body_asset_path(&animation_config.assets_body_root, variant);
-        let files = collect_png_files(&dir)?;
-        if !files.is_empty() {
-            variants.push(files);
+        if !dir.is_dir() {
+            return Err(format!("目录不存在：{}", dir.display()));
+        }
+
+        let mut variant_dirs = collect_png_variant_dirs_recursive(&dir);
+        variant_dirs.sort();
+
+        for variant_dir in variant_dirs {
+            let files = collect_png_files(&variant_dir)?;
+            if !files.is_empty() {
+                variants.push(files);
+            }
         }
     }
     Ok(variants)

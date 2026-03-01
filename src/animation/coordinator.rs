@@ -52,6 +52,37 @@ impl PlayerSet {
 }
 
 fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
+    match reqs.drag {
+        DRAG_ANIM_START_REQUESTED => {
+            players.shutdown.stop();
+            if players.drag_raise.is_playing_end() {
+                players.drag_raise.stop();
+            }
+            players.drag_raise.start(&mut players.pinch, &mut players.touch, &mut players.startup);
+            if players.drag_raise.is_active() && !players.drag_raise.is_playing_end() {
+                return;
+            }
+        }
+        DRAG_ANIM_LOOP_REQUESTED => {
+            players.shutdown.stop();
+            if players.drag_raise.is_playing_end() {
+                players.drag_raise.stop();
+            }
+            players.drag_raise.continue_loop(&mut players.pinch, &mut players.touch, &mut players.startup);
+            if players.drag_raise.is_active() && !players.drag_raise.is_playing_end() {
+                return;
+            }
+        }
+        DRAG_ANIM_END_REQUESTED => {
+            players.drag_raise.end();
+        }
+        _ => {}
+    }
+
+    if players.drag_raise.is_active() && !players.drag_raise.is_playing_end() {
+        return;
+    }
+
     if reqs.shutdown == SHUTDOWN_ANIM_REQUESTED {
         players.drag_raise.stop();
         players.pinch.stop();
@@ -65,38 +96,42 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         return;
     }
 
-    match reqs.drag {
-        DRAG_ANIM_START_REQUESTED => {
-            players.drag_raise.start(&mut players.pinch, &mut players.touch, &mut players.startup);
+    match reqs.pinch {
+        PINCH_ANIM_START_REQUESTED => {
+            if players.drag_raise.is_playing_end() {
+                players.drag_raise.stop();
+            }
+            players.pinch.start(&mut players.touch, &mut players.startup);
         }
-        DRAG_ANIM_LOOP_REQUESTED => {
-            players.drag_raise.continue_loop(&mut players.pinch, &mut players.touch, &mut players.startup);
+        PINCH_ANIM_LOOP_REQUESTED => {
+            if players.drag_raise.is_playing_end() {
+                players.drag_raise.stop();
+            }
+            players.pinch.continue_loop(&mut players.touch, &mut players.startup);
         }
-        DRAG_ANIM_END_REQUESTED => {
-            players.drag_raise.end();
+        PINCH_ANIM_END_REQUESTED => {
+            if players.drag_raise.is_playing_end() {
+                players.drag_raise.stop();
+            }
+            players.pinch.end(&mut players.touch, &mut players.startup);
         }
         _ => {}
     }
 
-    if !players.drag_raise.is_active() {
-        match reqs.pinch {
-            PINCH_ANIM_START_REQUESTED => {
-                players.pinch.start(&mut players.touch, &mut players.startup);
-            }
-            PINCH_ANIM_LOOP_REQUESTED => {
-                players.pinch.continue_loop(&mut players.touch, &mut players.startup);
-            }
-            PINCH_ANIM_END_REQUESTED => {
-                players.pinch.end(&mut players.touch, &mut players.startup);
-            }
-            _ => {}
-        }
-    }
-
-    if !players.drag_raise.is_active() && !players.pinch.is_active() {
+    if !players.pinch.is_active() {
         match reqs.touch {
-            TOUCH_ANIM_HEAD_REQUESTED => players.touch.start_head(&mut players.startup),
-            TOUCH_ANIM_BODY_REQUESTED => players.touch.start_body(&mut players.startup),
+            TOUCH_ANIM_HEAD_REQUESTED => {
+                if players.drag_raise.is_playing_end() {
+                    players.drag_raise.stop();
+                }
+                players.touch.start_head(&mut players.startup)
+            }
+            TOUCH_ANIM_BODY_REQUESTED => {
+                if players.drag_raise.is_playing_end() {
+                    players.drag_raise.stop();
+                }
+                players.touch.start_body(&mut players.startup)
+            }
             _ => {}
         }
     }

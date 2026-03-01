@@ -147,7 +147,7 @@ impl DragRaisePlayer {
 
         if matches!(
             self.playback_mode,
-            DragPlaybackMode::StaticStart | DragPlaybackMode::StaticLoop | DragPlaybackMode::End
+            DragPlaybackMode::StaticStart | DragPlaybackMode::StaticLoop
         ) {
             return;
         }
@@ -173,6 +173,10 @@ impl DragRaisePlayer {
         self.drag_raise_end_files = self.drag_raise_end_variants[variant_index].clone();
         self.drag_raise_end_index = 0;
         self.playback_mode = DragPlaybackMode::End;
+    }
+
+    pub(crate) fn is_playing_end(&self) -> bool {
+        self.playback_mode == DragPlaybackMode::End
     }
 }
 

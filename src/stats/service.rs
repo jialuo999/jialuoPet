@@ -16,13 +16,13 @@ const DECAY_BALANCE_FOOD_DRINK: f64 = 1.0;
 const DECAY_BALANCE_STRENGTH: f64 = 0.8;
 const DECAY_BALANCE_FEELING: f64 = 0.5;
 const DECAY_BALANCE_HEALTH: f64 = 0.3;
-const TOUCH_HEAD_STRENGTH_COST: f64 = 5.0;
-const TOUCH_HEAD_FEELING_GAIN: f64 = 10.0;
-const TOUCH_BODY_STRENGTH_COST: f64 = 10.0;
-const TOUCH_BODY_FEELING_GAIN: f64 = 6.0;
-const PINCH_STRENGTH_COST: f64 = 4.0;
-const PINCH_FEELING_GAIN_POSITIVE: f64 = 8.0;
-const PINCH_FEELING_GAIN_NEGATIVE: f64 = -5.0;
+const TOUCH_HEAD_STRENGTH_COST: f64 = 7.0;
+const TOUCH_HEAD_FEELING_GAIN: f64 = 20.0;
+const TOUCH_BODY_STRENGTH_COST: f64 = 12.0;
+const TOUCH_BODY_FEELING_GAIN: f64 = 15.0;
+const PINCH_STRENGTH_COST: f64 = 5.0;
+const PINCH_FEELING_GAIN_POSITIVE: f64 = 10.0;
+const PINCH_FEELING_GAIN_NEGATIVE: f64 = -7.0;
 
 #[derive(Debug, Clone, Copy)]
 struct PanelLimits {
@@ -220,21 +220,15 @@ impl PetStatsService {
     }
 
     fn apply_feeling_gain(&mut self, feeling_gain: f64) {
-        let actual_gain = {
+        let raw_feeling = {
             let stats = self.stats.borrow();
-            if feeling_gain < 0.0 {
-                feeling_gain.max(-stats.feeling)
-            } else {
-                feeling_gain
-            }
+            stats.feeling + feeling_gain
         };
 
-        self.apply_likability_gain(actual_gain);
+        self.apply_likability_gain(feeling_gain);
 
-        {
-            let mut stats = self.stats.borrow_mut();
-            stats.feeling = (stats.feeling + feeling_gain).clamp(0.0, stats.feeling_max);
-        }
+        let mut stats = self.stats.borrow_mut();
+        stats.feeling = raw_feeling.clamp(0.0, stats.feeling_max);
     }
 
     fn apply_likability_gain(&mut self, delta: f64) {

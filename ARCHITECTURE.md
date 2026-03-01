@@ -71,8 +71,8 @@
 
 在 `coordinator` 中，事件分发优先级为：
 
-1. `shutdown`
-2. `drag_raise`
+1. `drag_raise`（长按拖动最高优先级，可抢占并打断其他动画）
+2. `shutdown`
 3. `pinch`
 4. `touch`
 
@@ -102,6 +102,9 @@
   3. 周期完成后回到 `Raised_Dynamic` 并重新计时。
 - 若在 `Raised_Static` 播放期间放下鼠标，仍按结束流程播放 `C_*` 结束段。
 - `A/B/C` 资源按模式命名匹配（如 `A_Happy`、`B_Nomal`），并带回退策略（优先当前 mode，后回退 Nomal/Happy）。
+- 长按拖动触发后会立即打断当前动画（含 `shutdown`、`startup`、`pinch`、`touch`），确保窗口拖拽响应优先。
+- `C_*` 结束段不再是不可中断；后续 `drag/shutdown/pinch/touch` 请求均可抢占并中断其播放。
+- 当 `drag` 请求在 `C_*` 期间到达时，会立即中断 `C_*` 并切回 `Raised_Dynamic` 循环。
 
 ### 4.5 模式驱动资源切换
 

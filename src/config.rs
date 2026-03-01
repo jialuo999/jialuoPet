@@ -14,9 +14,7 @@ pub const DRAG_ALLOW_OFFSCREEN: bool = true;
 
 pub const ASSETS_BODY_ROOT: &str = "assets/body";
 pub const DEFAULT_HAPPY_IDLE_VARIANTS: &[&str] = &[
-	"Default/Happy/1",
-	"Default/Happy/2",
-	"Default/Happy/3",
+	"Default/Happy",
 ];
 pub const DEFAULT_NOMAL_IDLE_ROOT: &str = "Default/Nomal";
 pub const DEFAULT_POOR_CONDITION_IDLE_ROOT: &str = "Default/PoorCondition";

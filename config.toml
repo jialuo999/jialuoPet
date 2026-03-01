@@ -18,11 +18,9 @@ default_level = 80
 # 动画资源根目录（相对/绝对路径都可）
 assets_body_root = "assets/body"
 
-# 默认待机动画变体目录
+# 默认待机动画根目录（会递归扫描其下所有变体目录）
 default_happy_idle_variants = [
-	"Default/Happy/1",
-	"Default/Happy/2",
-	"Default/Happy/3",
+	"Default/Happy",
 ]
 default_nomal_idle_root = "Default/Nomal"
 default_poor_condition_idle_root = "Default/PoorCondition"
