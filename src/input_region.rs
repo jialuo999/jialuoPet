@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use crate::config::{DRAG_LONG_PRESS_MS, INPUT_DEBUG_LOG};
-use crate::stats_panel::{PetMode, PetStatsService};
+use crate::stats::{PetMode, PetStatsService};
 
 const TOUCH_HEAD_RECT_X1: i32 = 667;
 const TOUCH_HEAD_RECT_Y1: i32 = 113;

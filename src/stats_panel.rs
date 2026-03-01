@@ -1,225 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Image, Label, Orientation, Popover, ProgressBar};
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::config::PanelDebugConfig;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum PetMode {
-    Happy,
-    Nomal,
-    PoorCondition,
-    Ill,
-}
-
-impl PetMode {
-    pub fn label(self) -> &'static str {
-        match self {
-            PetMode::Happy => "Happy",
-            PetMode::Nomal => "Nomal",
-            PetMode::PoorCondition => "PoorCondition",
-            PetMode::Ill => "Ill",
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct PetStats {
-    pub stamina: u32,
-    pub satiety: u32,
-    pub thirst: u32,
-    pub mood: u32,
-    pub health: u32,
-    pub affinity: u32,
-    pub experience: u32,
-    pub level: u32,
-}
-
-impl Default for PetStats {
-    fn default() -> Self {
-        Self {
-            stamina: 0,
-            satiety: 0,
-            thirst: 0,
-            mood: 0,
-            health: 0,
-            affinity: 0,
-            experience: 0,
-            level: 0,
-        }
-    }
-}
-
-fn stats_from_panel_config(panel_config: &PanelDebugConfig) -> PetStats {
-    PetStats {
-        stamina: panel_config.default_stamina,
-        satiety: panel_config.default_satiety,
-        thirst: panel_config.default_thirst,
-        mood: panel_config.default_mood,
-        health: panel_config.default_health,
-        affinity: panel_config.default_affinity,
-        experience: panel_config.default_experience,
-        level: panel_config.default_level,
-    }
-}
-
-#[derive(Clone)]
-pub struct PetStatsService {
-    inner: Rc<RefCell<PetStats>>,
-    panel_config: Rc<RefCell<PanelDebugConfig>>,
-}
-
-impl PetStatsService {
-    pub fn new(panel_config: Rc<RefCell<PanelDebugConfig>>) -> Self {
-        let initial_stats = {
-            let config = panel_config.borrow().clone();
-            stats_from_panel_config(&config)
-        };
-
-        Self {
-            inner: Rc::new(RefCell::new(initial_stats)),
-            panel_config,
-        }
-    }
-
-    pub fn apply_panel_config(&self, panel_config: PanelDebugConfig) {
-        *self.panel_config.borrow_mut() = panel_config.clone();
-        *self.inner.borrow_mut() = stats_from_panel_config(&panel_config);
-    }
-
-    pub fn basic_stat_max(&self) -> u32 {
-        self.panel_config.borrow().basic_stat_max
-    }
-
-    pub fn experience_max(&self) -> u32 {
-        self.panel_config.borrow().experience_max
-    }
-
-    pub fn level_max(&self) -> u32 {
-        self.panel_config.borrow().level_max
-    }
-
-    pub fn snapshot(&self) -> PetStats {
-        self.inner.borrow().clone()
-    }
-
-    pub fn cal_mode(&self) -> PetMode {
-        let stats = self.inner.borrow();
-        let feeling_max = self.basic_stat_max().max(1);
-        let feeling = stats.mood.min(feeling_max);
-        let health = stats.health.min(feeling_max);
-        let likability = stats.affinity.min(feeling_max);
-
-        let feeling_percent = feeling * 100 / feeling_max;
-        let mut realhel: i32 = 60;
-        if feeling_percent >= 80 {
-            realhel -= 12;
-        }
-        if likability >= 80 {
-            realhel -= 12;
-        } else if likability >= 40 {
-            realhel -= 6;
-        }
-        realhel = realhel.max(0);
-
-        let health_i32 = health as i32;
-        if health_i32 <= realhel {
-            return if health_i32 <= realhel / 2 {
-                PetMode::Ill
-            } else {
-                PetMode::PoorCondition
-            };
-        }
-
-        let realfel = 0.90
-            - if likability >= 80 {
-                0.20
-            } else if likability >= 40 {
-                0.10
-            } else {
-                0.0
-            };
-        let felps = feeling as f64 / feeling_max as f64;
-
-        if felps >= realfel {
-            PetMode::Happy
-        } else if felps <= realfel / 2.0 {
-            PetMode::PoorCondition
-        } else {
-            PetMode::Nomal
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_stamina(&self, value: u32) {
-        self.inner.borrow_mut().stamina = value.min(self.basic_stat_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn set_satiety(&self, value: u32) {
-        self.inner.borrow_mut().satiety = value.min(self.basic_stat_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn set_thirst(&self, value: u32) {
-        self.inner.borrow_mut().thirst = value.min(self.basic_stat_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn set_mood(&self, value: u32) {
-        self.inner.borrow_mut().mood = value.min(self.basic_stat_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn set_health(&self, value: u32) {
-        self.inner.borrow_mut().health = value.min(self.basic_stat_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn set_affinity(&self, value: u32) {
-        self.inner.borrow_mut().affinity = value.min(self.basic_stat_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn set_experience(&self, value: u32) {
-        self.inner.borrow_mut().experience = value.min(self.experience_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn set_level(&self, value: u32) {
-        self.inner.borrow_mut().level = value.min(self.level_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn gain_experience(&self, amount: u32) {
-        let mut stats = self.inner.borrow_mut();
-        stats.experience = (stats.experience + amount).min(self.experience_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn on_feed(&self, amount: u32) {
-        let mut stats = self.inner.borrow_mut();
-        stats.satiety = (stats.satiety + amount).min(self.basic_stat_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn on_drink(&self, amount: u32) {
-        let mut stats = self.inner.borrow_mut();
-        stats.thirst = (stats.thirst + amount).min(self.basic_stat_max());
-    }
-
-    #[allow(dead_code)]
-    pub fn on_interact(&self, amount: u32) {
-        let basic_stat_max = self.basic_stat_max();
-        let mut stats = self.inner.borrow_mut();
-        stats.mood = (stats.mood + amount).min(basic_stat_max);
-        stats.affinity = (stats.affinity + amount / 2).min(basic_stat_max);
-    }
-
-    #[allow(dead_code)]
-    pub fn on_tick(&self) {}
-}
+use crate::stats::{PetMode, PetStatsService};
 
 pub struct StatsPanel {
     popover: Popover,
@@ -338,30 +119,31 @@ impl StatsPanel {
     }
 
     pub fn refresh(&self) {
-        let stats = self.stats_service.snapshot();
+        let stats = self.stats_service.get_stats();
         let mode = self.stats_service.cal_mode();
         let basic_stat_max = self.stats_service.basic_stat_max();
         let experience_max = self.stats_service.experience_max();
         let level_max = self.stats_service.level_max();
+
         set_bar_value(
             &self.stamina_bar,
             &self.stamina_value,
-            stats.stamina,
+            stats.strength,
             basic_stat_max,
         );
         set_bar_value(
             &self.satiety_bar,
             &self.satiety_value,
-            stats.satiety,
+            stats.strength_food,
             basic_stat_max,
         );
         set_bar_value(
             &self.thirst_bar,
             &self.thirst_value,
-            stats.thirst,
+            stats.strength_drink,
             basic_stat_max,
         );
-        set_bar_value(&self.mood_bar, &self.mood_value, stats.mood, basic_stat_max);
+        set_bar_value(&self.mood_bar, &self.mood_value, stats.feeling, basic_stat_max);
         set_bar_value(
             &self.health_bar,
             &self.health_value,
@@ -371,17 +153,22 @@ impl StatsPanel {
         set_bar_value(
             &self.affinity_bar,
             &self.affinity_value,
-            stats.affinity,
+            stats.likability,
             basic_stat_max,
         );
         set_bar_value(
             &self.experience_bar,
             &self.experience_value,
-            stats.experience,
+            stats.exp,
             experience_max,
         );
-        set_bar_value(&self.level_bar, &self.level_value, stats.level, level_max);
-        self.mode_value.set_text(mode.label());
+        set_bar_value(
+            &self.level_bar,
+            &self.level_value,
+            stats.level as f64,
+            level_max,
+        );
+        self.mode_value.set_text(mode_label(mode));
     }
 }
 
@@ -408,9 +195,18 @@ fn build_stat_row(name: &str) -> (Box, ProgressBar, Label) {
     (row, bar, value)
 }
 
-fn set_bar_value(bar: &ProgressBar, value_label: &Label, value: u32, max: u32) {
-    let max_value = max.max(1) as f64;
-    let current = value.min(max) as f64;
+fn set_bar_value(bar: &ProgressBar, value_label: &Label, value: f64, max: f64) {
+    let max_value = max.max(f64::EPSILON);
+    let current = value.clamp(0.0, max_value);
     bar.set_fraction(current / max_value);
-    value_label.set_text(&format!("{}/{}", value.min(max), max));
+    value_label.set_text(&format!("{:.0}/{:.0}", current, max_value));
+}
+
+fn mode_label(mode: PetMode) -> &'static str {
+    match mode {
+        PetMode::Happy => "Happy",
+        PetMode::Nomal => "Nomal",
+        PetMode::PoorCondition => "PoorCondition",
+        PetMode::Ill => "Ill",
+    }
 }

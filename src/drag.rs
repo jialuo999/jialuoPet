@@ -11,7 +11,7 @@ use crate::animation::{
     request_pinch_animation_start,
 };
 use crate::config::{DRAG_ALLOW_OFFSCREEN, DRAG_LONG_PRESS_MS};
-use crate::stats_panel::{PetMode, PetStatsService};
+use crate::stats::{PetMode, PetStatsService};
 
 const DRAG_FOCUS_PIXEL_X: i32 = 581;
 const DRAG_FOCUS_PIXEL_Y: i32 = 257;

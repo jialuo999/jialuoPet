@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::config::AnimationPathConfig;
-use crate::stats_panel::PetMode;
+use crate::stats::PetMode;
 
 use super::AnimationPlayer;
 use crate::animation::assets::{

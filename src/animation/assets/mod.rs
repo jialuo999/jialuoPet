@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::AnimationPathConfig;
-use crate::stats_panel::PetMode;
+use crate::stats::PetMode;
 
 #[derive(Clone, Default)]
 pub(crate) struct TouchVariant {

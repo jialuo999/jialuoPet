@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::stats_panel::PetMode;
+use crate::stats::PetMode;
 
 use super::{AnimationPlayer, StartupPlayer};
 use crate::animation::assets::{build_touch_sequence, collect_touch_variants, TouchStageVariants};

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::config::{load_animation_path_config, CAROUSEL_INTERVAL_MS};
 use crate::input_region::setup_image_input_region;
-use crate::stats_panel::{PetMode, PetStatsService};
+use crate::stats::{PetMode, PetStatsService};
 
 use super::assets::body_asset_path;
 use super::player::{
@@ -217,11 +217,13 @@ pub fn load_carousel_images(
 
     let state = Rc::new(RefCell::new(players));
     let state_clone = state.clone();
-    let stats_service_clone = stats_service.clone();
+    let mut stats_service_clone = stats_service.clone();
     let image_clone = image.clone();
     let window_clone = window.clone();
 
     timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
+        stats_service_clone.on_tick(CAROUSEL_INTERVAL_MS as f64 / 1000.0);
+
         let next_path = {
             let mut players = state_clone.borrow_mut();
             let reqs = consume_requests();

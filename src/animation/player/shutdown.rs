@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::stats_panel::PetMode;
+use crate::stats::PetMode;
 
 use super::AnimationPlayer;
 use crate::animation::assets::{collect_shutdown_variants, pseudo_random_index};

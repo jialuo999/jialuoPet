@@ -2,6 +2,7 @@ mod animation;
 mod config;
 mod drag;
 mod input_region;
+mod stats;
 mod stats_panel;
 
 use gtk4::prelude::*;
@@ -24,7 +25,8 @@ use drag::setup_long_press_drag;
 use input_region::{
     setup_context_menu, setup_image_input_region, setup_input_probe, setup_touch_click_regions,
 };
-use stats_panel::{PetStatsService, StatsPanel};
+use stats::PetStatsService;
+use stats_panel::StatsPanel;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PendingSystemAction {
@@ -80,8 +82,7 @@ fn build_ui(app: &Application) {
     window.set_margin(Edge::Bottom, 20);
 
     let current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(None));
-    let initial_panel_config = Rc::new(RefCell::new(load_panel_debug_config()));
-    let stats_service = PetStatsService::new(initial_panel_config);
+    let stats_service = PetStatsService::from_panel_config(load_panel_debug_config(), 5.0);
 
     // 加载并显示资源图像
     let image = match load_carousel_images(&window, current_pixbuf.clone(), stats_service.clone()) {

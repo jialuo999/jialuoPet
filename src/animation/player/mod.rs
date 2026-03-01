@@ -7,7 +7,7 @@ mod touch;
 
 use std::path::PathBuf;
 
-use crate::stats_panel::PetMode;
+use crate::stats::PetMode;
 
 pub(crate) use default_idle::DefaultIdlePlayer;
 pub(crate) use drag_raise::DragRaisePlayer;
