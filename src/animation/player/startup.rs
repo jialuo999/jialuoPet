@@ -49,7 +49,7 @@ impl AnimationPlayer for StartupPlayer {
         Some(frame)
     }
 
-    fn stop(&mut self) {
+    fn interrupt(&mut self, _skip_to_end: bool) {
         self.active = false;
         self.files.clear();
         self.index = 0;

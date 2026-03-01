@@ -18,6 +18,25 @@ pub(crate) struct TouchStageVariants {
     stage_c: Vec<TouchVariant>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Segment {
+    A,
+    B,
+    C,
+    Single,
+}
+
+impl Segment {
+    fn stage_prefix(self) -> Option<&'static str> {
+        match self {
+            Segment::A => Some("A"),
+            Segment::B => Some("B"),
+            Segment::C => Some("C"),
+            Segment::Single => None,
+        }
+    }
+}
+
 pub(crate) fn body_asset_path(root: &str, relative: &str) -> PathBuf {
     PathBuf::from(root).join(relative)
 }
@@ -174,6 +193,19 @@ pub(crate) fn collect_mode_variant_dirs(root: &Path, mode: PetMode) -> Vec<PathB
         .cloned()
         .collect();
 
+    if selected.is_empty() && mode != PetMode::Nomal {
+        selected = variant_dirs
+            .iter()
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|name| dir_name_matches_mode(name, PetMode::Nomal))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+    }
+
     if selected.is_empty() && mode != PetMode::Happy {
         selected = variant_dirs
             .into_iter()
@@ -315,42 +347,60 @@ pub(crate) fn select_default_files_for_mode(
     };
 
     selected
+        .or_else(|| pick_random_variant(nomal_variants))
         .or_else(|| pick_random_variant(happy_variants))
         .unwrap_or_default()
+}
+
+fn collect_segment_variants_for_mode(root: &Path, mode: PetMode, segment: Segment) -> Vec<Vec<PathBuf>> {
+    let mut mode_dirs: Vec<PathBuf> = collect_png_variant_dirs_recursive(root)
+        .into_iter()
+        .filter(|path| path_matches_mode(path, mode))
+        .collect();
+
+    if let Some(stage_prefix) = segment.stage_prefix() {
+        mode_dirs.retain(|path| path_in_stage_branch(path, root, stage_prefix));
+    }
+
+    mode_dirs.sort();
+    mode_dirs
+        .into_iter()
+        .filter_map(|path| {
+            let files = collect_png_files(&path).ok()?;
+            if files.is_empty() {
+                None
+            } else {
+                Some(files)
+            }
+        })
+        .collect()
+}
+
+fn load_frames_flat(root: &Path) -> Vec<PathBuf> {
+    collect_png_files_recursive_filtered(root, &[]).unwrap_or_default()
+}
+
+pub(crate) fn load_frames_with_fallback(root: &Path, mode: PetMode, segment: Segment) -> Vec<PathBuf> {
+    let mut variants = collect_segment_variants_for_mode(root, mode, segment);
+    if variants.is_empty() && mode != PetMode::Nomal {
+        variants = collect_segment_variants_for_mode(root, PetMode::Nomal, segment);
+    }
+    if variants.is_empty() && mode != PetMode::Happy {
+        variants = collect_segment_variants_for_mode(root, PetMode::Happy, segment);
+    }
+
+    if variants.is_empty() {
+        return load_frames_flat(root);
+    }
+
+    variants.swap_remove(pseudo_random_index(variants.len()))
 }
 
 pub(crate) fn collect_drag_raise_loop_files(
     raise_dynamic_root: &Path,
     mode: PetMode,
 ) -> Vec<PathBuf> {
-    let mut mode_dirs: Vec<PathBuf> = collect_dir_paths(raise_dynamic_root)
-        .into_iter()
-        .filter(|path| {
-            path.file_name()
-                .and_then(|s| s.to_str())
-                .map(|name| dir_name_matches_mode(name, mode))
-                .unwrap_or(false)
-        })
-        .collect();
-
-    if mode_dirs.is_empty() && mode != PetMode::Happy {
-        mode_dirs = collect_dir_paths(raise_dynamic_root)
-            .into_iter()
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|s| s.to_str())
-                    .map(|name| dir_name_matches_mode(name, PetMode::Happy))
-                    .unwrap_or(false)
-            })
-            .collect();
-    }
-
-    if mode_dirs.is_empty() {
-        return Vec::new();
-    }
-
-    let selected_index = pseudo_random_index(mode_dirs.len());
-    collect_png_files_recursive_filtered(&mode_dirs[selected_index], &[]).unwrap_or_default()
+    load_frames_with_fallback(raise_dynamic_root, mode, Segment::Single)
 }
 
 pub(crate) fn collect_drag_raise_start_files(_raise_static_root: &Path, _mode: PetMode) -> Vec<PathBuf> {
@@ -411,18 +461,32 @@ fn collect_pinch_stage_variants(
         .cloned()
         .collect();
 
-    let selected_mode_dir = if mode_dirs.is_empty() && mode != PetMode::Happy {
+    let selected_mode_dir = if mode_dirs.is_empty() && mode != PetMode::Nomal {
         collect_dir_paths(pinch_root)
             .into_iter()
             .find(|path| {
                 path.file_name()
                     .and_then(|s| s.to_str())
-                    .map(|name| dir_name_matches_mode(name, PetMode::Happy))
+                    .map(|name| dir_name_matches_mode(name, PetMode::Nomal))
                     .unwrap_or(false)
             })
     } else {
         mode_dirs.into_iter().next()
-    };
+    }
+    .or_else(|| {
+        if mode != PetMode::Happy {
+            collect_dir_paths(pinch_root)
+                .into_iter()
+                .find(|path| {
+                    path.file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|name| dir_name_matches_mode(name, PetMode::Happy))
+                        .unwrap_or(false)
+                })
+        } else {
+            None
+        }
+    });
 
     let Some(mode_dir) = selected_mode_dir else {
         return Vec::new();
@@ -448,11 +512,16 @@ fn collect_pinch_stage_variants(
 }
 
 pub(crate) fn collect_pinch_start_files(pinch_root: &Path, mode: PetMode) -> Vec<PathBuf> {
-    let mut variants = collect_pinch_stage_variants(pinch_root, mode, "A");
-    if variants.is_empty() {
-        Vec::new()
+    let files = load_frames_with_fallback(pinch_root, mode, Segment::A);
+    if files.is_empty() {
+        let mut variants = collect_pinch_stage_variants(pinch_root, mode, "A");
+        if variants.is_empty() {
+            Vec::new()
+        } else {
+            variants.swap_remove(pseudo_random_index(variants.len()))
+        }
     } else {
-        variants.swap_remove(pseudo_random_index(variants.len()))
+        files
     }
 }
 
@@ -461,11 +530,16 @@ pub(crate) fn collect_pinch_loop_variants(pinch_root: &Path, mode: PetMode) -> V
 }
 
 pub(crate) fn collect_pinch_end_files(pinch_root: &Path, mode: PetMode) -> Vec<PathBuf> {
-    let mut variants = collect_pinch_stage_variants(pinch_root, mode, "C");
-    if variants.is_empty() {
-        Vec::new()
+    let files = load_frames_with_fallback(pinch_root, mode, Segment::C);
+    if files.is_empty() {
+        let mut variants = collect_pinch_stage_variants(pinch_root, mode, "C");
+        if variants.is_empty() {
+            Vec::new()
+        } else {
+            variants.swap_remove(pseudo_random_index(variants.len()))
+        }
     } else {
-        variants.swap_remove(pseudo_random_index(variants.len()))
+        files
     }
 }
 

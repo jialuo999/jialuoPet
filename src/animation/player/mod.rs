@@ -19,6 +19,9 @@ pub(crate) use touch::TouchPlayer;
 pub(crate) trait AnimationPlayer {
     fn is_active(&self) -> bool;
     fn next_frame(&mut self) -> Option<PathBuf>;
-    fn stop(&mut self);
+    fn interrupt(&mut self, skip_to_end: bool);
+    fn stop(&mut self) {
+        self.interrupt(true);
+    }
     fn reload(&mut self, mode: PetMode);
 }

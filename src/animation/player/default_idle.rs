@@ -5,19 +5,33 @@ use crate::stats_panel::PetMode;
 
 use super::AnimationPlayer;
 use crate::animation::assets::{
-    collect_default_happy_idle_variants, collect_default_mode_idle_variants,
-    select_default_files_for_mode,
+    body_asset_path, collect_default_happy_idle_variants, collect_default_mode_idle_variants,
+    load_frames_with_fallback, pseudo_random_index, select_default_files_for_mode, Segment,
 };
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IdlePhase {
+    Default,
+    A { index: usize },
+    B { index: usize, remaining: u8 },
+    C { index: usize },
+}
 
 pub(crate) struct DefaultIdlePlayer {
     config: AnimationPathConfig,
     current_mode: PetMode,
+    idle_root: PathBuf,
     default_happy_variants: Vec<Vec<PathBuf>>,
     default_nomal_variants: Vec<Vec<PathBuf>>,
     default_poor_condition_variants: Vec<Vec<PathBuf>>,
     default_ill_variants: Vec<Vec<PathBuf>>,
     default_files: Vec<PathBuf>,
     default_index: usize,
+    phase: IdlePhase,
+    tick: u32,
+    a_files: Vec<PathBuf>,
+    b_files: Vec<PathBuf>,
+    c_files: Vec<PathBuf>,
 }
 
 impl DefaultIdlePlayer {
@@ -40,15 +54,26 @@ impl DefaultIdlePlayer {
             &default_ill_variants,
         );
 
+        let idle_root = body_asset_path(&config.assets_body_root, "IDEL");
+        let a_files = load_frames_with_fallback(&idle_root, mode, Segment::A);
+        let b_files = load_frames_with_fallback(&idle_root, mode, Segment::B);
+        let c_files = load_frames_with_fallback(&idle_root, mode, Segment::C);
+
         Ok(Self {
             config: config.clone(),
             current_mode: mode,
+            idle_root,
             default_happy_variants,
             default_nomal_variants,
             default_poor_condition_variants,
             default_ill_variants,
             default_files,
             default_index: 0,
+            phase: IdlePhase::Default,
+            tick: 0,
+            a_files,
+            b_files,
+            c_files,
         })
     }
 
@@ -65,7 +90,24 @@ impl DefaultIdlePlayer {
 
     pub(crate) fn enter(&mut self) -> Option<PathBuf> {
         self.refresh_selection();
+        self.phase = IdlePhase::Default;
+        self.tick = 0;
+        self.default_index = 0;
         self.default_files.first().cloned()
+    }
+
+    fn can_trigger_idle_abc(&self) -> bool {
+        !self.a_files.is_empty() && !self.b_files.is_empty()
+    }
+
+    fn next_default_frame(&mut self) -> Option<PathBuf> {
+        if self.default_files.is_empty() {
+            return None;
+        }
+
+        let next_index = (self.default_index + 1) % self.default_files.len();
+        self.default_index = next_index;
+        self.default_files.get(next_index).cloned()
     }
 }
 
@@ -75,16 +117,98 @@ impl AnimationPlayer for DefaultIdlePlayer {
     }
 
     fn next_frame(&mut self) -> Option<PathBuf> {
-        if self.default_files.is_empty() {
-            return None;
-        }
+        self.tick = self.tick.wrapping_add(1);
 
-        let next_index = (self.default_index + 1) % self.default_files.len();
-        self.default_index = next_index;
-        self.default_files.get(next_index).cloned()
+        match self.phase {
+            IdlePhase::Default => {
+                if self.can_trigger_idle_abc() && self.tick % 24 == 0 && pseudo_random_index(10) == 0 {
+                    self.phase = IdlePhase::A { index: 0 };
+                    return self.a_files.first().cloned().or_else(|| self.next_default_frame());
+                }
+                self.next_default_frame()
+            }
+            IdlePhase::A { mut index } => {
+                if self.a_files.is_empty() {
+                    self.phase = IdlePhase::Default;
+                    return self.next_default_frame();
+                }
+
+                let next = index + 1;
+                if next < self.a_files.len() {
+                    index = next;
+                    self.phase = IdlePhase::A { index };
+                    self.a_files.get(next).cloned()
+                } else {
+                    let repeats = 2 + pseudo_random_index(3) as u8;
+                    self.phase = IdlePhase::B {
+                        index: 0,
+                        remaining: repeats,
+                    };
+                    self.b_files
+                        .first()
+                        .cloned()
+                        .or_else(|| self.c_files.first().cloned())
+                        .or_else(|| self.next_default_frame())
+                }
+            }
+            IdlePhase::B {
+                mut index,
+                mut remaining,
+            } => {
+                if self.b_files.is_empty() {
+                    self.phase = IdlePhase::C { index: 0 };
+                    return self
+                        .c_files
+                        .first()
+                        .cloned()
+                        .or_else(|| self.next_default_frame());
+                }
+
+                let next = index + 1;
+                if next < self.b_files.len() {
+                    index = next;
+                    self.phase = IdlePhase::B { index, remaining };
+                    self.b_files.get(next).cloned()
+                } else if remaining > 1 {
+                    remaining -= 1;
+                    self.phase = IdlePhase::B {
+                        index: 0,
+                        remaining,
+                    };
+                    self.b_files.first().cloned()
+                } else {
+                    self.phase = IdlePhase::C { index: 0 };
+                    self.c_files
+                        .first()
+                        .cloned()
+                        .or_else(|| self.next_default_frame())
+                }
+            }
+            IdlePhase::C { mut index } => {
+                if self.c_files.is_empty() {
+                    self.phase = IdlePhase::Default;
+                    self.default_index = 0;
+                    return self.default_files.first().cloned();
+                }
+
+                let next = index + 1;
+                if next < self.c_files.len() {
+                    index = next;
+                    self.phase = IdlePhase::C { index };
+                    self.c_files.get(next).cloned()
+                } else {
+                    self.phase = IdlePhase::Default;
+                    self.default_index = 0;
+                    self.default_files.first().cloned()
+                }
+            }
+        }
     }
 
-    fn stop(&mut self) {}
+    fn interrupt(&mut self, _skip_to_end: bool) {
+        self.phase = IdlePhase::Default;
+        self.tick = 0;
+    }
 
     fn reload(&mut self, mode: PetMode) {
         self.current_mode = mode;
@@ -94,6 +218,11 @@ impl AnimationPlayer for DefaultIdlePlayer {
         self.default_poor_condition_variants =
             collect_default_mode_idle_variants(&self.config, PetMode::PoorCondition);
         self.default_ill_variants = collect_default_mode_idle_variants(&self.config, PetMode::Ill);
+        self.a_files = load_frames_with_fallback(&self.idle_root, mode, Segment::A);
+        self.b_files = load_frames_with_fallback(&self.idle_root, mode, Segment::B);
+        self.c_files = load_frames_with_fallback(&self.idle_root, mode, Segment::C);
+        self.phase = IdlePhase::Default;
+        self.tick = 0;
         self.refresh_selection();
     }
 }

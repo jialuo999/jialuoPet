@@ -73,11 +73,13 @@ impl AnimationPlayer for ShutdownPlayer {
         self.shutdown_hold_frame.clone()
     }
 
-    fn stop(&mut self) {
+    fn interrupt(&mut self, skip_to_end: bool) {
         self.playing_shutdown = false;
         self.shutdown_files.clear();
         self.shutdown_index = 0;
-        self.shutdown_hold_frame = None;
+        if skip_to_end {
+            self.shutdown_hold_frame = None;
+        }
     }
 
     fn reload(&mut self, mode: PetMode) {

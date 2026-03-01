@@ -84,7 +84,7 @@ impl AnimationPlayer for TouchPlayer {
         Some(frame)
     }
 
-    fn stop(&mut self) {
+    fn interrupt(&mut self, _skip_to_end: bool) {
         self.playback_mode = TouchPlaybackMode::None;
         self.touch_files.clear();
         self.touch_index = 0;
@@ -93,6 +93,6 @@ impl AnimationPlayer for TouchPlayer {
     fn reload(&mut self, mode: PetMode) {
         self.touch_head_variants = collect_touch_variants(Path::new(&self.touch_head_root), mode);
         self.touch_body_variants = collect_touch_variants(Path::new(&self.touch_body_root), mode);
-        self.stop();
+        self.interrupt(true);
     }
 }

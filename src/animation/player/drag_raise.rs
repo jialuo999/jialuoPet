@@ -158,7 +158,19 @@ impl AnimationPlayer for DragRaisePlayer {
         }
     }
 
-    fn stop(&mut self) {
+    fn interrupt(&mut self, skip_to_end: bool) {
+        if !skip_to_end
+            && (self.playback_mode == DragPlaybackMode::Start
+                || self.playback_mode == DragPlaybackMode::Loop)
+            && !self.drag_raise_end_variants.is_empty()
+        {
+            let variant_index = pseudo_random_index(self.drag_raise_end_variants.len());
+            self.drag_raise_end_files = self.drag_raise_end_variants[variant_index].clone();
+            self.drag_raise_end_index = 0;
+            self.playback_mode = DragPlaybackMode::End;
+            return;
+        }
+
         self.playback_mode = DragPlaybackMode::None;
         self.drag_raise_start_index = 0;
         self.drag_raise_loop_index = 0;

@@ -101,12 +101,23 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     }
 }
 
+fn maybe_update_mode(players: &mut PlayerSet, stats_service: &PetStatsService) {
+    if players.startup.is_active() {
+        return;
+    }
+
+    let next_mode = stats_service.cal_mode();
+    if next_mode != players.current_mode {
+        players.reload_for_mode(next_mode);
+    }
+}
+
 fn advance_frame(players: &mut PlayerSet) -> PathBuf {
     if players.shutdown.is_active() {
         if let Some(frame) = players.shutdown.next_frame() {
             return frame;
         }
-        players.shutdown.stop();
+        players.shutdown.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
     }
 
@@ -114,7 +125,7 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
         if let Some(frame) = players.drag_raise.next_frame() {
             return frame;
         }
-        players.drag_raise.stop();
+        players.drag_raise.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
     }
 
@@ -122,7 +133,7 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
         if let Some(frame) = players.pinch.next_frame() {
             return frame;
         }
-        players.pinch.stop();
+        players.pinch.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
     }
 
@@ -130,7 +141,7 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
         if let Some(frame) = players.touch.next_frame() {
             return frame;
         }
-        players.touch.stop();
+        players.touch.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
     }
 
@@ -138,7 +149,7 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
         if let Some(frame) = players.startup.next_frame() {
             return frame;
         }
-        players.startup.stop();
+        players.startup.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
     }
 
@@ -214,14 +225,7 @@ pub fn load_carousel_images(
         let next_path = {
             let mut players = state_clone.borrow_mut();
             let reqs = consume_requests();
-
-            if !players.startup.is_active() {
-                let next_mode = stats_service_clone.cal_mode();
-                if next_mode != players.current_mode {
-                    players.reload_for_mode(next_mode);
-                }
-            }
-
+            maybe_update_mode(&mut players, &stats_service_clone);
             dispatch_requests(&mut players, reqs);
             advance_frame(&mut players)
         };

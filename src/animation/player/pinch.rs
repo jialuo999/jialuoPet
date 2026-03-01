@@ -158,7 +158,17 @@ impl AnimationPlayer for PinchPlayer {
         }
     }
 
-    fn stop(&mut self) {
+    fn interrupt(&mut self, skip_to_end: bool) {
+        if !skip_to_end
+            && (self.playback_mode == PinchPlaybackMode::Start
+                || self.playback_mode == PinchPlaybackMode::Loop)
+            && !self.pinch_end_files.is_empty()
+        {
+            self.playback_mode = PinchPlaybackMode::End;
+            self.pinch_end_index = 0;
+            return;
+        }
+
         self.playback_mode = PinchPlaybackMode::None;
         self.pinch_loop_files.clear();
         self.pinch_start_index = 0;
