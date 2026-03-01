@@ -11,7 +11,7 @@ use crate::stats::{PetMode, PetStatsService};
 
 use super::assets::body_asset_path;
 use super::player::{
-    AnimationPlayer, DefaultIdlePlayer, DragRaisePlayer, PinchPlayer, ShutdownPlayer,
+    AnimationPlayer, DefaultIdlePlayer, DragRaisePlayer, PinchPlayer, ShutdownPlayer, StatePlayer,
     StartupPlayer, TouchPlayer,
 };
 use super::requests::{
@@ -21,6 +21,8 @@ use super::requests::{
     TOUCH_ANIM_BODY_REQUESTED, TOUCH_ANIM_HEAD_REQUESTED,
 };
 
+const STATE_SUPPRESS_TICKS_AFTER_IDEL: u32 = 36;
+
 struct PlayerSet {
     current_mode: PetMode,
     shutdown: ShutdownPlayer,
@@ -28,13 +30,17 @@ struct PlayerSet {
     pinch: PinchPlayer,
     touch: TouchPlayer,
     startup: StartupPlayer,
+    state: StatePlayer,
     default_idle: DefaultIdlePlayer,
+    state_suppress_ticks: u32,
 }
 
 impl PlayerSet {
     fn reload_for_mode(&mut self, mode: PetMode) {
         self.current_mode = mode;
         self.default_idle.reload(mode);
+        self.state.reload(mode);
+        self.state_suppress_ticks = 0;
         self.drag_raise.reload(mode);
         self.pinch.reload(mode);
         self.touch.reload(mode);
@@ -45,7 +51,9 @@ impl PlayerSet {
         if self.startup.is_active() {
             self.startup.peek_first_frame()
         } else {
-            self.default_idle.enter()
+            self.state
+                .next_frame()
+                .or_else(|| self.default_idle.enter())
         }
     }
 }
@@ -56,6 +64,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         players.pinch.stop();
         players.touch.stop();
         players.startup.stop();
+        players.state.stop();
         players.shutdown.start();
         return;
     }
@@ -66,6 +75,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
 
     match reqs.drag {
         DRAG_ANIM_START_REQUESTED => {
+            players.state.stop();
             players.drag_raise.start(&mut players.pinch, &mut players.touch, &mut players.startup);
         }
         DRAG_ANIM_LOOP_REQUESTED => {
@@ -80,6 +90,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     if !players.drag_raise.is_active() {
         match reqs.pinch {
             PINCH_ANIM_START_REQUESTED => {
+                players.state.stop();
                 players.pinch.start(&mut players.touch, &mut players.startup);
             }
             PINCH_ANIM_LOOP_REQUESTED => {
@@ -94,8 +105,14 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
 
     if !players.drag_raise.is_active() && !players.pinch.is_active() {
         match reqs.touch {
-            TOUCH_ANIM_HEAD_REQUESTED => players.touch.start_head(&mut players.startup),
-            TOUCH_ANIM_BODY_REQUESTED => players.touch.start_body(&mut players.startup),
+            TOUCH_ANIM_HEAD_REQUESTED => {
+                players.state.stop();
+                players.touch.start_head(&mut players.startup)
+            }
+            TOUCH_ANIM_BODY_REQUESTED => {
+                players.state.stop();
+                players.touch.start_body(&mut players.startup)
+            }
             _ => {}
         }
     }
@@ -113,6 +130,14 @@ fn maybe_update_mode(players: &mut PlayerSet, stats_service: &PetStatsService) {
 }
 
 fn advance_frame(players: &mut PlayerSet) -> PathBuf {
+    if players.default_idle.take_idle_abc_finished() {
+        players.state_suppress_ticks = STATE_SUPPRESS_TICKS_AFTER_IDEL;
+    }
+
+    if players.state_suppress_ticks > 0 {
+        players.state_suppress_ticks -= 1;
+    }
+
     if players.shutdown.is_active() {
         if let Some(frame) = players.shutdown.next_frame() {
             return frame;
@@ -151,6 +176,20 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
         }
         players.startup.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
+    }
+
+    if players.default_idle.is_playing_idle_abc() {
+        return players
+            .default_idle
+            .next_frame()
+            .or_else(|| players.default_idle.enter())
+            .unwrap_or_default();
+    }
+
+    if players.state.is_active() && players.state_suppress_ticks == 0 {
+        if let Some(frame) = players.state.next_frame() {
+            return frame;
+        }
     }
 
     players
@@ -193,6 +232,7 @@ pub fn load_carousel_images(
         &animation_config.assets_body_root,
         &animation_config.touch_body_root,
     );
+    let state_root = body_asset_path(&animation_config.assets_body_root, &animation_config.state_root);
 
     let mut players = PlayerSet {
         current_mode,
@@ -201,7 +241,9 @@ pub fn load_carousel_images(
         pinch: PinchPlayer::new(pinch_root, current_mode),
         touch: TouchPlayer::new(touch_head_root, touch_body_root, current_mode),
         startup: StartupPlayer::new(startup_root, current_mode),
+        state: StatePlayer::new(state_root, current_mode),
         default_idle: DefaultIdlePlayer::new(&animation_config, current_mode)?,
+        state_suppress_ticks: 0,
     };
 
     let image = Image::new();

@@ -355,7 +355,7 @@ pub(crate) fn select_default_files_for_mode(
 fn collect_segment_variants_for_mode(root: &Path, mode: PetMode, segment: Segment) -> Vec<Vec<PathBuf>> {
     let mut mode_dirs: Vec<PathBuf> = collect_png_variant_dirs_recursive(root)
         .into_iter()
-        .filter(|path| path_matches_mode(path, mode))
+        .filter(|path| path_matches_mode_or_agnostic(path, mode))
         .collect();
 
     if let Some(stage_prefix) = segment.stage_prefix() {
@@ -390,7 +390,10 @@ pub(crate) fn load_frames_with_fallback(root: &Path, mode: PetMode, segment: Seg
     }
 
     if variants.is_empty() {
-        return load_frames_flat(root);
+        return match segment {
+            Segment::Single => load_frames_flat(root),
+            Segment::A | Segment::B | Segment::C => Vec::new(),
+        };
     }
 
     variants.swap_remove(pseudo_random_index(variants.len()))
@@ -582,8 +585,42 @@ fn path_contains_keyword(path: &Path, keyword: &str) -> bool {
     })
 }
 
+fn component_matches_segment(name: &str, stage_prefix: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    let stage = stage_prefix.to_ascii_lowercase();
+
+    if normalized == stage {
+        return true;
+    }
+
+    normalized
+        .strip_prefix(&stage)
+        .and_then(|rest| rest.chars().next())
+        .map(|next| !next.is_ascii_alphanumeric())
+        .unwrap_or(false)
+}
+
+fn path_has_any_mode_keyword(path: &Path) -> bool {
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .map(|name| {
+                let lower = name.to_ascii_lowercase();
+                lower.contains("happy")
+                    || lower.contains("nomal")
+                    || lower.contains("poorcondition")
+                    || lower.contains("ill")
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn path_matches_mode_or_agnostic(path: &Path, mode: PetMode) -> bool {
+    path_matches_mode(path, mode) || !path_has_any_mode_keyword(path)
+}
+
 fn path_in_stage_branch(path: &Path, touch_root: &Path, stage_prefix: &str) -> bool {
-    let stage_prefix = stage_prefix.to_ascii_lowercase();
     let Ok(relative) = path.strip_prefix(touch_root) else {
         return false;
     };
@@ -592,7 +629,7 @@ fn path_in_stage_branch(path: &Path, touch_root: &Path, stage_prefix: &str) -> b
         component
             .as_os_str()
             .to_str()
-            .map(|name| name.to_ascii_lowercase().starts_with(&stage_prefix))
+            .map(|name| component_matches_segment(name, stage_prefix))
             .unwrap_or(false)
     })
 }

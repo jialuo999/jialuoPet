@@ -32,6 +32,8 @@ pub(crate) struct DefaultIdlePlayer {
     a_files: Vec<PathBuf>,
     b_files: Vec<PathBuf>,
     c_files: Vec<PathBuf>,
+    idle_abc_just_finished: bool,
+    idle_abc_cooldown_ticks: u32,
 }
 
 impl DefaultIdlePlayer {
@@ -74,7 +76,13 @@ impl DefaultIdlePlayer {
             a_files,
             b_files,
             c_files,
+            idle_abc_just_finished: false,
+            idle_abc_cooldown_ticks: Self::choose_idle_abc_cooldown(),
         })
+    }
+
+    fn choose_idle_abc_cooldown() -> u32 {
+        180 + pseudo_random_index(181) as u32
     }
 
     fn refresh_selection(&mut self) {
@@ -109,6 +117,16 @@ impl DefaultIdlePlayer {
         self.default_index = next_index;
         self.default_files.get(next_index).cloned()
     }
+
+    pub(crate) fn take_idle_abc_finished(&mut self) -> bool {
+        let finished = self.idle_abc_just_finished;
+        self.idle_abc_just_finished = false;
+        finished
+    }
+
+    pub(crate) fn is_playing_idle_abc(&self) -> bool {
+        !matches!(self.phase, IdlePhase::Default)
+    }
 }
 
 impl AnimationPlayer for DefaultIdlePlayer {
@@ -118,10 +136,16 @@ impl AnimationPlayer for DefaultIdlePlayer {
 
     fn next_frame(&mut self) -> Option<PathBuf> {
         self.tick = self.tick.wrapping_add(1);
+        self.idle_abc_just_finished = false;
 
         match self.phase {
             IdlePhase::Default => {
-                if self.can_trigger_idle_abc() && self.tick % 24 == 0 && pseudo_random_index(10) == 0 {
+                if self.idle_abc_cooldown_ticks > 0 {
+                    self.idle_abc_cooldown_ticks -= 1;
+                    return self.next_default_frame();
+                }
+
+                if self.can_trigger_idle_abc() {
                     self.phase = IdlePhase::A { index: 0 };
                     return self.a_files.first().cloned().or_else(|| self.next_default_frame());
                 }
@@ -188,6 +212,8 @@ impl AnimationPlayer for DefaultIdlePlayer {
                 if self.c_files.is_empty() {
                     self.phase = IdlePhase::Default;
                     self.default_index = 0;
+                    self.idle_abc_just_finished = true;
+                    self.idle_abc_cooldown_ticks = Self::choose_idle_abc_cooldown();
                     return self.default_files.first().cloned();
                 }
 
@@ -199,6 +225,8 @@ impl AnimationPlayer for DefaultIdlePlayer {
                 } else {
                     self.phase = IdlePhase::Default;
                     self.default_index = 0;
+                    self.idle_abc_just_finished = true;
+                    self.idle_abc_cooldown_ticks = Self::choose_idle_abc_cooldown();
                     self.default_files.first().cloned()
                 }
             }
@@ -208,6 +236,8 @@ impl AnimationPlayer for DefaultIdlePlayer {
     fn interrupt(&mut self, _skip_to_end: bool) {
         self.phase = IdlePhase::Default;
         self.tick = 0;
+        self.idle_abc_just_finished = false;
+        self.idle_abc_cooldown_ticks = Self::choose_idle_abc_cooldown();
     }
 
     fn reload(&mut self, mode: PetMode) {
@@ -223,6 +253,8 @@ impl AnimationPlayer for DefaultIdlePlayer {
         self.c_files = load_frames_with_fallback(&self.idle_root, mode, Segment::C);
         self.phase = IdlePhase::Default;
         self.tick = 0;
+        self.idle_abc_just_finished = false;
+        self.idle_abc_cooldown_ticks = Self::choose_idle_abc_cooldown();
         self.refresh_selection();
     }
 }
