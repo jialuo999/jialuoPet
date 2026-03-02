@@ -1,3 +1,4 @@
+// ===== 宠物状态分类 =====
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PetMode {
     Happy,
@@ -6,6 +7,7 @@ pub enum PetMode {
     Ill,
 }
 
+// ===== 用户交互类型 =====
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InteractType {
     TouchHead,
@@ -13,6 +15,7 @@ pub enum InteractType {
     Pinch,
 }
 
+// ===== 宠物核心数值模型 =====
 #[derive(Debug, Clone)]
 pub struct PetStats {
     pub health: f64,
@@ -52,6 +55,7 @@ impl Default for PetStats {
 }
 
 impl PetStats {
+	// 计算“真实健康阈值”（受心情与好感加成影响）
     pub fn real_health_threshold(&self) -> f64 {
         let safe_feeling_max = self.feeling_max.max(f64::EPSILON);
         let felps = self.feeling / safe_feeling_max;
@@ -68,6 +72,7 @@ impl PetStats {
         (60.0_f64 - feeling_bonus - likability_bonus).max(0.0_f64)
     }
 
+	// 根据当前数值推导模式
     pub fn cal_mode(&self) -> PetMode {
         let realhel = self.real_health_threshold();
 
@@ -99,10 +104,12 @@ impl PetStats {
         }
     }
 
+	// 升级所需经验
     pub fn level_up_exp_needed(&self) -> f64 {
         200.0 * self.level as f64 - 100.0
     }
 
+	// 随等级增长的上限曲线
     pub fn feeling_max_for_level(level: u32) -> f64 {
         let level_f = level as f64;
         100.0 + (level_f * (1.0 + level_f)).powf(0.75) * 2.0

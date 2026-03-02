@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use std::path::{Path, PathBuf};
 
 use crate::config::CAROUSEL_INTERVAL_MS;
@@ -9,6 +10,7 @@ use crate::animation::assets::{
     collect_drag_raise_static_b_variants, pseudo_random_index,
 };
 
+// ===== 拖拽抬起播放模式 =====
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DragPlaybackMode {
     None,
@@ -18,11 +20,13 @@ enum DragPlaybackMode {
     End,
 }
 
+// ===== 拖拽动画策略参数 =====
 const DRAG_STATIC_TRIGGER_MS: u64 = 20_000;
 const DRAG_STATIC_B_LOOP_MIN: u8 = 3;
 const DRAG_STATIC_B_LOOP_MAX: u8 = 7;
 const DRAG_STATIC_B_FRAME_HOLD_TICKS: u8 = 1;
 
+// ===== 拖拽/抬起播放器 =====
 pub(crate) struct DragRaisePlayer {
     raise_dynamic_root: PathBuf,
     raise_static_root: PathBuf,
@@ -44,6 +48,7 @@ pub(crate) struct DragRaisePlayer {
 }
 
 impl DragRaisePlayer {
+	// 构建播放器并按模式加载素材
     pub(crate) fn new(raise_dynamic_root: PathBuf, raise_static_root: PathBuf, mode: PetMode) -> Self {
         let drag_raise_static_start_files =
             collect_drag_raise_start_files(Path::new(&raise_static_root), mode);
@@ -73,15 +78,18 @@ impl DragRaisePlayer {
         }
     }
 
+	// 动态拖拽多久后触发静态循环
     fn drag_static_trigger_ticks() -> u32 {
         ((DRAG_STATIC_TRIGGER_MS + CAROUSEL_INTERVAL_MS - 1) / CAROUSEL_INTERVAL_MS) as u32
     }
 
+	// 随机决定静态循环次数
     fn choose_static_b_loop_count() -> u8 {
         let span = (DRAG_STATIC_B_LOOP_MAX - DRAG_STATIC_B_LOOP_MIN + 1) as usize;
         DRAG_STATIC_B_LOOP_MIN + pseudo_random_index(span) as u8
     }
 
+	// 准备一次 B 段静态循环
     fn prepare_static_b_cycle(&mut self) -> bool {
         if self.drag_raise_static_b_variants.is_empty() {
             return false;
@@ -96,6 +104,7 @@ impl DragRaisePlayer {
         !self.drag_raise_static_b_files.is_empty() && self.drag_raise_static_b_remaining_loops > 0
     }
 
+	// 动态循环过程中，按阈值切换到静态段
     fn maybe_trigger_static_cycle(&mut self) {
         if self.playback_mode != DragPlaybackMode::DynamicLoop {
             return;
@@ -119,6 +128,7 @@ impl DragRaisePlayer {
         }
     }
 
+	// 开始拖拽动画（抢占 startup/pinch/touch）
     pub(crate) fn start(
         &mut self,
         pinch: &mut PinchPlayer,
@@ -135,6 +145,7 @@ impl DragRaisePlayer {
         }
     }
 
+	// 继续拖拽循环
     pub(crate) fn continue_loop(
         &mut self,
         pinch: &mut PinchPlayer,
@@ -163,6 +174,7 @@ impl DragRaisePlayer {
         self.playback_mode = DragPlaybackMode::DynamicLoop;
     }
 
+	// 请求播放结束段
     pub(crate) fn end(&mut self) {
         if self.drag_raise_end_variants.is_empty() {
             self.playback_mode = DragPlaybackMode::None;
@@ -180,6 +192,7 @@ impl DragRaisePlayer {
     }
 }
 
+// ===== 通用播放器接口实现 =====
 impl AnimationPlayer for DragRaisePlayer {
     fn is_active(&self) -> bool {
         self.playback_mode != DragPlaybackMode::None

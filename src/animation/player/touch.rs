@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use std::path::{Path, PathBuf};
 
 use crate::stats::PetMode;
@@ -5,6 +6,7 @@ use crate::stats::PetMode;
 use super::{AnimationPlayer, StartupPlayer};
 use crate::animation::assets::{build_touch_sequence, collect_touch_variants, TouchStageVariants};
 
+// ===== 触摸播放模式 =====
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TouchPlaybackMode {
     None,
@@ -12,6 +14,7 @@ enum TouchPlaybackMode {
     Body,
 }
 
+// ===== 触摸动画播放器 =====
 pub(crate) struct TouchPlayer {
     touch_head_root: PathBuf,
     touch_body_root: PathBuf,
@@ -23,6 +26,7 @@ pub(crate) struct TouchPlayer {
 }
 
 impl TouchPlayer {
+	// 构建播放器并加载头部/身体触摸变体
     pub(crate) fn new(touch_head_root: PathBuf, touch_body_root: PathBuf, mode: PetMode) -> Self {
         let touch_head_variants = collect_touch_variants(Path::new(&touch_head_root), mode);
         let touch_body_variants = collect_touch_variants(Path::new(&touch_body_root), mode);
@@ -38,6 +42,7 @@ impl TouchPlayer {
         }
     }
 
+	// 开始头部触摸序列
     pub(crate) fn start_head(&mut self, startup: &mut StartupPlayer) {
         let sequence = build_touch_sequence(&self.touch_head_variants);
         if sequence.is_empty() {
@@ -50,6 +55,7 @@ impl TouchPlayer {
         self.touch_index = 0;
     }
 
+	// 开始身体触摸序列
     pub(crate) fn start_body(&mut self, startup: &mut StartupPlayer) {
         let sequence = build_touch_sequence(&self.touch_body_variants);
         if sequence.is_empty() {
@@ -63,6 +69,7 @@ impl TouchPlayer {
     }
 }
 
+// ===== 通用播放器接口实现 =====
 impl AnimationPlayer for TouchPlayer {
     fn is_active(&self) -> bool {
         self.playback_mode != TouchPlaybackMode::None

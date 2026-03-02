@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use std::path::{Path, PathBuf};
 
 use crate::stats::PetMode;
@@ -6,6 +7,7 @@ use super::AnimationPlayer;
 use crate::animation::assets::{collect_shutdown_variants, pseudo_random_index};
 use crate::animation::requests::set_shutdown_animation_finished;
 
+// ===== 关机动画播放器 =====
 pub(crate) struct ShutdownPlayer {
     shutdown_root: PathBuf,
     shutdown_variants: Vec<Vec<PathBuf>>,
@@ -16,6 +18,7 @@ pub(crate) struct ShutdownPlayer {
 }
 
 impl ShutdownPlayer {
+	// 构建播放器并按模式加载候选段
     pub(crate) fn new(shutdown_root: PathBuf, mode: PetMode) -> Self {
         let shutdown_variants = collect_shutdown_variants(Path::new(&shutdown_root), mode);
         Self {
@@ -28,6 +31,7 @@ impl ShutdownPlayer {
         }
     }
 
+	// 开始关机动画，并重置完成标记
     pub(crate) fn start(&mut self) {
         set_shutdown_animation_finished(false);
 
@@ -45,6 +49,7 @@ impl ShutdownPlayer {
     }
 }
 
+// ===== 通用播放器接口实现 =====
 impl AnimationPlayer for ShutdownPlayer {
     fn is_active(&self) -> bool {
         self.playing_shutdown || self.shutdown_hold_frame.is_some()

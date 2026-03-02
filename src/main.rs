@@ -1,3 +1,4 @@
+// ===== 模块声明 =====
 mod animation;
 mod config;
 mod drag;
@@ -6,6 +7,7 @@ mod settings;
 mod stats;
 mod stats_panel;
 
+// ===== 外部依赖导入 =====
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, CssProvider, GestureClick, STYLE_PROVIDER_PRIORITY_APPLICATION};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
@@ -15,6 +17,7 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::Duration;
 
+// ===== 项目内模块导入 =====
 use animation::{
     is_shutdown_animation_finished, load_carousel_images, request_shutdown_animation,
     request_animation_config_reload,
@@ -31,6 +34,7 @@ use settings::{SettingsPanel, SettingsStore, WindowPosition};
 use stats::PetStatsService;
 use stats_panel::StatsPanel;
 
+// ===== 系统动作状态机（用于“关机动画完成后再执行动作”） =====
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PendingSystemAction {
     None,
@@ -38,6 +42,7 @@ enum PendingSystemAction {
     Restart,
 }
 
+// 读取窗口当前左上角坐标（统一转换为 Left/Top 语义，便于持久化）
 fn current_window_left_top(window: &ApplicationWindow) -> (i32, i32) {
     let alloc = window.allocation();
     let win_w = alloc.width().max(1);
@@ -73,6 +78,7 @@ fn current_window_left_top(window: &ApplicationWindow) -> (i32, i32) {
     (left, top)
 }
 
+// 应用已保存的位置：切换为 Left+Top 锚定并设置 margin
 fn apply_window_position(window: &ApplicationWindow, position: WindowPosition) {
     window.set_anchor(Edge::Left, true);
     window.set_anchor(Edge::Top, true);
@@ -83,26 +89,24 @@ fn apply_window_position(window: &ApplicationWindow, position: WindowPosition) {
 }
 
 fn main() {
-    // GTK 应用主入口
+    // ===== GTK 应用入口 =====
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
 
-    // 运行应用，接收命令行参数并返回退出状态
-    // 不会 panic：app.run() 的返回值是程序退出状态
+    // ===== 运行主循环并透传退出状态 =====
     let status = app.run();
     std::process::exit(status.value());
 }
 
 /// 构建应用UI
 fn build_ui(app: &Application) {
-    // 创建应用窗口，绑定到应用
-    // 不会 panic：ApplicationWindow::new 是标准GTK方法
+    // ===== 窗口创建与基础属性 =====
     let window = ApplicationWindow::new(app);
     window.set_title(Some("Niri Pet"));
-    // 不固定窗口大小，让其根据内容自动调整
+    // 不固定窗口尺寸，让内容主导窗口大小
     window.set_default_size(1, 1);
 
-    // 设置透明背景 CSS
+    // ===== 透明样式（窗口与图片都透明） =====
     let css_provider = CssProvider::new();
     css_provider.load_from_data(
         "window { background-color: transparent; padding: 0; margin: 0; border: 0; }
@@ -110,42 +114,44 @@ fn build_ui(app: &Application) {
     );
     window.style_context().add_provider(&css_provider, STYLE_PROVIDER_PRIORITY_APPLICATION);
 
-    // 启用 Layer Shell：使窗口成为Niri可管理的浮窗
+    // ===== Layer Shell 配置（作为桌面浮层宠物窗口） =====
     window.init_layer_shell();
 
-    // 配置 Layer Shell 属性：必须显式设置以满足Niri要求
     window.set_layer(Layer::Overlay);
-    // 不保留屏幕空间，透明覆盖在其他窗口上
+    // 不保留屏幕空间
     window.set_exclusive_zone(-1);
-    // 不抢占键盘焦点，允许其他应用响应输入
+    // 不抢占键盘焦点
     window.set_keyboard_mode(KeyboardMode::None);
-    // 默认锚定位置：右下角
+    // 默认锚定到右下角
     window.set_anchor(Edge::Right, true);
     window.set_anchor(Edge::Bottom, true);
 
-    // 避开Niri顶部工作区指示器（通常高30-40px）和边缘
+    // 默认边距（避开顶部指示区与屏幕边缘）
     window.set_margin(Edge::Top, 50);
     window.set_margin(Edge::Right, 20);
     window.set_margin(Edge::Bottom, 20);
 
+    // ===== 设置加载与窗口位置恢复 =====
     let settings_store = Rc::new(SettingsStore::load());
     if let Some(position) = settings_store.remembered_position_if_enabled() {
         apply_window_position(&window, position);
     }
 
+    // ===== 核心运行时状态（当前图像帧 + 宠物数值服务） =====
     let current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(None));
     let stats_service = PetStatsService::from_panel_config(load_panel_debug_config(), 5.0);
 
-    // 加载并显示资源图像
+    // ===== 加载动画资源并创建主图像控件 =====
     let image = match load_carousel_images(&window, current_pixbuf.clone(), stats_service.clone()) {
         Ok(image_widget) => image_widget,
         Err(e) => {
-            // Fatal 错误：资源缺失，程序无法继续运行
+            // 资源缺失属于不可恢复错误，直接退出
             eprintln!("致命错误：无法加载图像，程序无法启动：{}", e);
             std::process::exit(1);
         }
     };
 
+    // ===== 宠物状态逻辑 tick（按配置间隔推进） =====
     let logic_interval_secs = stats_service.logic_interval_secs();
     let stats_interval_ms = (logic_interval_secs * 1000.0) as u64;
     let mut stats_service_for_tick = stats_service.clone();
@@ -154,10 +160,11 @@ fn build_ui(app: &Application) {
         glib::ControlFlow::Continue
     });
     
-    // 设置窗口子部件，透明背景自动应用
+    // ===== 装配窗口内容与统计面板 =====
     window.set_child(Some(&image));
     let stats_panel = Rc::new(StatsPanel::new(&image, stats_service.clone()));
 
+    // ===== 配置热更新监听：收到变更后刷新数值与动画配置 =====
     let (config_reload_tx, config_reload_rx) = mpsc::channel::<()>();
     if let Err(err) = start_panel_config_watcher(move || {
         let _ = config_reload_tx.send(());
@@ -185,11 +192,13 @@ fn build_ui(app: &Application) {
         });
     }
 
+    // ===== 输入诊断与交互守卫状态 =====
     // 诊断：记录窗口/图片是否收到点击事件
     setup_input_probe(&window, &image);
-    // 长按图片不透明区域后可拖动窗口位置
+    // 交互期间若处于“待退出/待重启”状态，则屏蔽普通输入行为
     let pending_action = Rc::new(RefCell::new(PendingSystemAction::None));
 
+    // ===== 长按拖拽：移动窗口并按需持久化位置 =====
     setup_long_press_drag(
         &window,
         &image,
@@ -212,6 +221,8 @@ fn build_ui(app: &Application) {
             Rc::new(move || *pending_action.borrow() != PendingSystemAction::None)
         },
     );
+
+    // ===== 点击触摸区域：触发头部/身体动画 =====
     setup_touch_click_regions(
         &image,
         current_pixbuf.clone(),
@@ -227,7 +238,8 @@ fn build_ui(app: &Application) {
             Rc::new(move || *pending_action.borrow() != PendingSystemAction::None)
         },
     );
-    // 右键弹出菜单（仅在可点击区域生效）
+
+    // ===== 右键上下文菜单：统计面板、设置、重启与退出 =====
     {
         let stats_panel_for_panel_click = stats_panel.clone();
         let stats_panel_for_menu_popup = stats_panel.clone();
@@ -261,10 +273,12 @@ fn build_ui(app: &Application) {
             let window_for_quit = window.clone();
             let settings_store_for_quit = settings_store.clone();
             Rc::new(move |action: PendingSystemAction| {
+                // 已有待执行动作时忽略重复请求，避免并发退出流程
                 if *pending_action.borrow() != PendingSystemAction::None {
                     return;
                 }
 
+                // 先播放关机动画，动画结束后再执行真正系统动作
                 *pending_action.borrow_mut() = action;
                 request_shutdown_animation();
 
@@ -274,9 +288,11 @@ fn build_ui(app: &Application) {
                 let settings_store_for_timeout = settings_store_for_quit.clone();
                 glib::timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
                     if !is_shutdown_animation_finished() {
+                        // 动画未完成，继续等待下一个周期
                         return glib::ControlFlow::Continue;
                     }
 
+                    // 退出前按配置保存当前位置
                     if settings_store_for_timeout.remember_position_enabled() {
                         let (left, top) = current_window_left_top(&window_for_timeout);
                         if let Err(err) = settings_store_for_timeout.update_position(left, top) {
@@ -287,6 +303,7 @@ fn build_ui(app: &Application) {
                     let action = *pending_action_for_timeout.borrow();
                     *pending_action_for_timeout.borrow_mut() = PendingSystemAction::None;
 
+                    // 重启：拉起新进程；退出：直接 quit
                     if action == PendingSystemAction::Restart {
                         match std::env::current_exe() {
                             Ok(exe) => {
@@ -347,6 +364,7 @@ fn build_ui(app: &Application) {
         );
     }
 
+    // ===== 左键点击空白处：收起统计面板 =====
     let dismiss_panel_click = GestureClick::new();
     dismiss_panel_click.set_button(1);
     {
@@ -357,9 +375,11 @@ fn build_ui(app: &Application) {
     }
     image.add_controller(dismiss_panel_click);
     
+    // ===== 展示窗口 =====
     window.present();
 
-    // 确保窗口 surface 就绪后至少应用一次输入区域
+    // ===== 输入区域修复策略（idle + map 双保险） =====
+    // surface 就绪后至少应用一次输入区域
     let window_for_idle = window.clone();
     let image_for_idle = image.clone();
     let pixbuf_for_idle = current_pixbuf.clone();
@@ -369,7 +389,7 @@ fn build_ui(app: &Application) {
         }
     });
 
-    // 在 map 后再次应用输入区域，避免 surface 尚未提交导致输入区域丢失
+    // 在 map 后再次应用，避免初次提交时输入区域丢失
     let image_for_map = image.clone();
     let pixbuf_for_map = current_pixbuf.clone();
     window.connect_map(move |mapped_window| {

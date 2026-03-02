@@ -1,5 +1,7 @@
+// ===== 依赖导入 =====
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
+// ===== 各类动画请求阶段常量 =====
 pub(crate) const DRAG_ANIM_IDLE: u8 = 0;
 pub(crate) const DRAG_ANIM_START_REQUESTED: u8 = 1;
 pub(crate) const DRAG_ANIM_LOOP_REQUESTED: u8 = 2;
@@ -17,6 +19,7 @@ pub(crate) const TOUCH_ANIM_IDLE: u8 = 0;
 pub(crate) const TOUCH_ANIM_HEAD_REQUESTED: u8 = 1;
 pub(crate) const TOUCH_ANIM_BODY_REQUESTED: u8 = 2;
 
+// ===== 全局请求状态（原子变量） =====
 static DRAG_RAISE_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(DRAG_ANIM_IDLE);
 static PINCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(PINCH_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(SHUTDOWN_ANIM_IDLE);
@@ -24,6 +27,7 @@ static TOUCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(TOUCH_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_FINISHED: AtomicBool = AtomicBool::new(false);
 static ANIMATION_CONFIG_RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+// ===== 单帧消费的请求快照 =====
 pub(crate) struct AnimationRequests {
     pub(crate) drag: u8,
     pub(crate) pinch: u8,
@@ -31,6 +35,7 @@ pub(crate) struct AnimationRequests {
     pub(crate) touch: u8,
 }
 
+// ===== 请求写入接口 =====
 pub fn request_drag_raise_animation_start() {
     DRAG_RAISE_ANIMATION_PHASE.store(DRAG_ANIM_START_REQUESTED, Ordering::Relaxed);
 }
@@ -68,6 +73,7 @@ pub fn request_animation_config_reload() {
     ANIMATION_CONFIG_RELOAD_REQUESTED.store(true, Ordering::Relaxed);
 }
 
+// ===== 状态读取/消费接口 =====
 pub fn is_shutdown_animation_finished() -> bool {
     SHUTDOWN_ANIMATION_FINISHED.load(Ordering::Relaxed)
 }

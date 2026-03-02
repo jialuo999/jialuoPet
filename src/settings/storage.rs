@@ -1,17 +1,21 @@
+// ===== 依赖导入 =====
 use std::cell::RefCell;
 use std::fs;
 use std::path::PathBuf;
 
 use super::model::{AppSettings, WindowPosition};
 
+// ===== 持久化文件路径 =====
 const SETTINGS_STATE_FILE: &str = "settings/user_settings.toml";
 
+// ===== 设置存储服务 =====
 pub struct SettingsStore {
     file_path: PathBuf,
     settings: RefCell<AppSettings>,
 }
 
 impl SettingsStore {
+	// 从磁盘加载设置，不存在时回退默认值
     pub fn load() -> Self {
         let file_path = PathBuf::from(SETTINGS_STATE_FILE);
         let settings = fs::read_to_string(&file_path)
@@ -25,6 +29,7 @@ impl SettingsStore {
         }
     }
 
+	// 获取当前设置快照
     pub fn snapshot(&self) -> AppSettings {
         self.settings.borrow().clone()
     }
@@ -42,6 +47,7 @@ impl SettingsStore {
         }
     }
 
+	// 更新开关并持久化
     pub fn update_remember_position(&self, enabled: bool) -> anyhow::Result<()> {
         {
             let mut settings = self.settings.borrow_mut();
@@ -50,6 +56,7 @@ impl SettingsStore {
         self.persist()
     }
 
+	// 更新位置并持久化
     pub fn update_position(&self, left: i32, top: i32) -> anyhow::Result<()> {
         {
             let mut settings = self.settings.borrow_mut();
@@ -58,6 +65,7 @@ impl SettingsStore {
         self.persist()
     }
 
+	// 统一写盘入口
     fn persist(&self) -> anyhow::Result<()> {
         if let Some(parent) = self.file_path.parent() {
             fs::create_dir_all(parent)?;

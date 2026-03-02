@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use glib::timeout_add_local;
 use gtk4::{ApplicationWindow, Image};
 use std::cell::RefCell;
@@ -22,6 +23,7 @@ use super::requests::{
     TOUCH_ANIM_HEAD_REQUESTED,
 };
 
+// ===== 运行时播放器集合 =====
 struct PlayerSet {
     current_mode: PetMode,
     shutdown: ShutdownPlayer,
@@ -33,6 +35,7 @@ struct PlayerSet {
 }
 
 impl PlayerSet {
+	// 模式切换时重载所有依赖模式的播放器
     fn reload_for_mode(&mut self, mode: PetMode) {
         self.current_mode = mode;
         self.default_idle.reload(mode);
@@ -42,6 +45,7 @@ impl PlayerSet {
         self.shutdown.reload(mode);
     }
 
+	// 启动时优先首帧（若有 startup）
     fn initial_frame(&mut self) -> Option<PathBuf> {
         if self.startup.is_active() {
             self.startup.peek_first_frame()
@@ -51,6 +55,7 @@ impl PlayerSet {
     }
 }
 
+// ===== 请求分发器：将原子请求路由到各播放器 =====
 fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     match reqs.drag {
         DRAG_ANIM_START_REQUESTED => {
@@ -137,6 +142,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     }
 }
 
+// ===== 模式同步：根据数值模式更新播放器素材 =====
 fn maybe_update_mode(players: &mut PlayerSet, stats_service: &PetStatsService) {
     if players.startup.is_active() {
         return;
@@ -148,6 +154,7 @@ fn maybe_update_mode(players: &mut PlayerSet, stats_service: &PetStatsService) {
     }
 }
 
+// ===== 帧推进器：按优先级产出下一帧 =====
 fn advance_frame(players: &mut PlayerSet) -> PathBuf {
     if players.shutdown.is_active() {
         if let Some(frame) = players.shutdown.next_frame() {
@@ -196,6 +203,7 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
         .unwrap_or_default()
 }
 
+// ===== 根据配置构建播放器集合 =====
 fn build_players(
     animation_config: &AnimationPathConfig,
     current_mode: PetMode,
@@ -244,6 +252,7 @@ fn build_players(
     Ok(players)
 }
 
+// ===== 动画总入口：创建 image 并启动轮询更新 =====
 pub fn load_carousel_images(
     window: &ApplicationWindow,
     current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
@@ -271,6 +280,7 @@ pub fn load_carousel_images(
     let window_clone = window.clone();
 
     timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
+        // 每个 tick：处理配置热更、消费请求、推进一帧并更新输入区域
         let next_path = {
             let mut players = state_clone.borrow_mut();
             if consume_animation_config_reload_request() {

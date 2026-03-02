@@ -1,7 +1,9 @@
+// ===== 依赖导入 =====
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Image, Label, Orientation, Popover, ProgressBar};
 use crate::stats::{PetMode, PetStatsService};
 
+// ===== 状态面板组件 =====
 pub struct StatsPanel {
     popover: Popover,
     stats_service: PetStatsService,
@@ -26,6 +28,7 @@ pub struct StatsPanel {
 
 impl StatsPanel {
     pub fn new(image: &Image, stats_service: PetStatsService) -> Self {
+        // ===== 面板基础容器 =====
         let popover = Popover::new();
         popover.set_has_arrow(true);
         popover.set_autohide(false);
@@ -42,6 +45,7 @@ impl StatsPanel {
         title.set_halign(Align::Start);
         root.append(&title);
 
+        // ===== 状态行（模式 + 数值条） =====
         let mode_row = Box::new(Orientation::Horizontal, 6);
         let mode_title = Label::new(Some("状态"));
         mode_title.set_halign(Align::Start);
@@ -73,6 +77,7 @@ impl StatsPanel {
 
         popover.set_child(Some(&root));
 
+        // ===== 组件装配 =====
         let panel = Self {
             popover,
             stats_service,
@@ -99,6 +104,7 @@ impl StatsPanel {
         panel
     }
 
+    // ===== 面板显示控制 =====
     pub fn present_at(&self, x: i32, y: i32) {
         self.refresh();
         self.popover
@@ -118,6 +124,7 @@ impl StatsPanel {
         self.popover.popdown();
     }
 
+    // ===== 数据刷新 =====
     pub fn refresh(&self) {
         let stats = self.stats_service.get_stats();
         let mode = self.stats_service.cal_mode();
@@ -172,6 +179,7 @@ impl StatsPanel {
     }
 }
 
+// ===== UI 辅助函数 =====
 fn build_stat_row(name: &str) -> (Box, ProgressBar, Label) {
     let row = Box::new(Orientation::Horizontal, 6);
 

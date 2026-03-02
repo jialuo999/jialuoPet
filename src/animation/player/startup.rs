@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use std::path::{Path, PathBuf};
 
 use crate::stats::PetMode;
@@ -5,6 +6,7 @@ use crate::stats::PetMode;
 use super::AnimationPlayer;
 use crate::animation::assets::choose_startup_animation_files;
 
+// ===== 启动动画播放器 =====
 pub(crate) struct StartupPlayer {
     startup_root: PathBuf,
     files: Vec<PathBuf>,
@@ -13,6 +15,7 @@ pub(crate) struct StartupPlayer {
 }
 
 impl StartupPlayer {
+	// 构建播放器并挑选一组启动帧
     pub(crate) fn new(startup_root: PathBuf, mode: PetMode) -> Self {
         let files = choose_startup_animation_files(Path::new(&startup_root), mode).unwrap_or_default();
         let active = !files.is_empty();
@@ -24,11 +27,13 @@ impl StartupPlayer {
         }
     }
 
+	// 用于首次展示时预览启动首帧
     pub(crate) fn peek_first_frame(&self) -> Option<PathBuf> {
         self.files.first().cloned()
     }
 }
 
+// ===== 通用播放器接口实现 =====
 impl AnimationPlayer for StartupPlayer {
     fn is_active(&self) -> bool {
         self.active && !self.files.is_empty()

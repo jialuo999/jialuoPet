@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use std::path::{Path, PathBuf};
 
 use crate::stats::PetMode;
@@ -8,6 +9,7 @@ use crate::animation::assets::{
     pseudo_random_index,
 };
 
+// ===== 捏持播放模式 =====
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PinchPlaybackMode {
     None,
@@ -16,6 +18,7 @@ enum PinchPlaybackMode {
     End,
 }
 
+// ===== 捏持播放器 =====
 pub(crate) struct PinchPlayer {
     pinch_root: PathBuf,
     pinch_start_files: Vec<PathBuf>,
@@ -29,6 +32,7 @@ pub(crate) struct PinchPlayer {
 }
 
 impl PinchPlayer {
+	// 构建播放器并按模式加载素材
     pub(crate) fn new(pinch_root: PathBuf, mode: PetMode) -> Self {
         let pinch_start_files = collect_pinch_start_files(Path::new(&pinch_root), mode);
         let pinch_loop_variants = collect_pinch_loop_variants(Path::new(&pinch_root), mode);
@@ -47,6 +51,7 @@ impl PinchPlayer {
         }
     }
 
+	// 开始捏持（优先 A 段，缺失则直接进入循环）
     pub(crate) fn start(&mut self, touch: &mut TouchPlayer, startup: &mut StartupPlayer) {
         if !self.pinch_start_files.is_empty() {
             startup.stop();
@@ -66,6 +71,7 @@ impl PinchPlayer {
         }
     }
 
+	// 持续捏持：保持/切换 B 段循环
     pub(crate) fn continue_loop(&mut self, touch: &mut TouchPlayer, startup: &mut StartupPlayer) {
         if self.playback_mode == PinchPlaybackMode::Start || self.pinch_loop_variants.is_empty() {
             return;
@@ -82,6 +88,7 @@ impl PinchPlayer {
         self.playback_mode = PinchPlaybackMode::Loop;
     }
 
+	// 结束捏持：进入 C 段
     pub(crate) fn end(&mut self, touch: &mut TouchPlayer, startup: &mut StartupPlayer) {
         if self.pinch_end_files.is_empty() {
             self.playback_mode = PinchPlaybackMode::None;
@@ -95,6 +102,7 @@ impl PinchPlayer {
     }
 }
 
+// ===== 通用播放器接口实现 =====
 impl AnimationPlayer for PinchPlayer {
     fn is_active(&self) -> bool {
         self.playback_mode != PinchPlaybackMode::None

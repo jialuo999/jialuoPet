@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use gtk4::cairo::Region;
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Box, Button, GestureClick, Image, Orientation, Popover};
@@ -8,6 +9,7 @@ use std::time::Instant;
 use crate::config::{DRAG_LONG_PRESS_MS, INPUT_DEBUG_LOG};
 use crate::stats::{InteractType, PetMode, PetStatsService};
 
+// ===== 触摸区域矩形定义（素材坐标系） =====
 const TOUCH_HEAD_RECT_X1: i32 = 667;
 const TOUCH_HEAD_RECT_Y1: i32 = 113;
 const TOUCH_HEAD_RECT_X2: i32 = 373;
@@ -29,6 +31,7 @@ const TOUCH_BODY_ILL_RECT_X2: i32 = 607;
 const TOUCH_BODY_ILL_RECT_Y2: i32 = 627;
 const TOUCH_TAP_MOVE_THRESHOLD: f64 = 8.0;
 
+// ===== 触摸区域数据结构 =====
 struct TouchRects {
     head_x1: i32,
     head_y1: i32,
@@ -40,6 +43,7 @@ struct TouchRects {
     body_y2: i32,
 }
 
+// 根据当前模式返回头部/身体区域
 fn touch_rects_for_mode(mode: PetMode) -> TouchRects {
     if mode == PetMode::Ill {
         return TouchRects {
@@ -66,6 +70,7 @@ fn touch_rects_for_mode(mode: PetMode) -> TouchRects {
     }
 }
 
+// ===== 输入区域：仅透明像素不响应点击 =====
 pub fn setup_image_input_region(
     window: &ApplicationWindow,
     image: &Image,
@@ -105,6 +110,7 @@ pub fn setup_image_input_region(
     }
 }
 
+// ===== 输入诊断探针（调试时输出点击日志） =====
 pub fn setup_input_probe(window: &ApplicationWindow, image: &Image) {
     if !INPUT_DEBUG_LOG {
         return;
@@ -123,6 +129,7 @@ pub fn setup_input_probe(window: &ApplicationWindow, image: &Image) {
     image.add_controller(img_click);
 }
 
+// ===== 右键菜单装配（主菜单 + 系统子菜单） =====
 pub fn setup_context_menu(
     image: &Image,
     on_panel_clicked: Rc<dyn Fn(i32, i32)>,
@@ -132,6 +139,7 @@ pub fn setup_context_menu(
     on_quit_clicked: Rc<dyn Fn()>,
     is_shutting_down: Rc<dyn Fn() -> bool>,
 ) {
+    // 主菜单 popover
     let popover = Popover::new();
     popover.set_has_arrow(true);
     popover.set_autohide(false);
@@ -144,6 +152,7 @@ pub fn setup_context_menu(
 
     let last_click_pos = Rc::new(RefCell::new((0i32, 0i32)));
 
+    // 系统子菜单：设置/重启/退出
     let system_box = Box::new(Orientation::Vertical, 4);
     let settings_button = Button::with_label("设置");
     settings_button.set_halign(gtk4::Align::Fill);
@@ -191,6 +200,7 @@ pub fn setup_context_menu(
     system_box.append(&quit_button);
     system_popover.set_child(Some(&system_box));
 
+    // 主菜单：投喂/面板/互动/系统（目前实现面板与系统）
     let menu_box = Box::new(Orientation::Vertical, 4);
     for item in ["投喂", "面板", "互动", "系统"] {
         let button = Button::with_label(item);
@@ -225,6 +235,7 @@ pub fn setup_context_menu(
     }
     popover.set_child(Some(&menu_box));
 
+    // 右键：弹出/收起菜单
     let right_click = GestureClick::new();
     right_click.set_button(3);
     {
@@ -260,6 +271,7 @@ pub fn setup_context_menu(
     }
     image.add_controller(right_click);
 
+    // 左键：点击外部时关闭菜单
     let left_click = GestureClick::new();
     left_click.set_button(1);
     {
@@ -277,6 +289,7 @@ pub fn setup_context_menu(
     image.add_controller(left_click);
 }
 
+// ===== 坐标换算：控件坐标 -> 素材像素坐标 =====
 fn map_point_to_pixbuf(
     image: &Image,
     current_pixbuf: &Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
@@ -306,6 +319,7 @@ fn map_point_to_pixbuf(
     Some((source_x, source_y))
 }
 
+// ===== 点击交互区域装配（头部/身体） =====
 pub fn setup_touch_click_regions(
     image: &Image,
     current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
@@ -314,6 +328,7 @@ pub fn setup_touch_click_regions(
     on_body_clicked: Rc<dyn Fn()>,
     is_shutting_down: Rc<dyn Fn() -> bool>,
 ) {
+    // 记录按下时刻与位置，用于过滤长按和拖动
     #[derive(Default)]
     struct TapState {
         press_x: f64,
@@ -405,6 +420,7 @@ pub fn setup_touch_click_regions(
     image.add_controller(click);
 }
 
+// ===== 透明通道扫描：生成真实可点击 Region =====
 fn create_region_from_pixbuf_scaled(
     pixbuf: &gdk_pixbuf::Pixbuf,
     offset_x: i32,

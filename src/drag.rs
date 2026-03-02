@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, GestureClick, GestureDrag, Image};
 use gtk4_layer_shell::{Edge, LayerShell};
@@ -13,6 +14,7 @@ use crate::animation::{
 use crate::config::{DRAG_ALLOW_OFFSCREEN, DRAG_LONG_PRESS_MS};
 use crate::stats::{InteractType, PetMode, PetStatsService};
 
+// ===== 拖拽与捏持判定参数（像素坐标基于原始素材） =====
 const DRAG_FOCUS_PIXEL_X: i32 = 581;
 const DRAG_FOCUS_PIXEL_Y: i32 = 257;
 const DRAG_FOCUS_PIXEL_ILL_X: i32 = 455;
@@ -23,6 +25,7 @@ const PINCH_RECT_X2: i32 = 338;
 const PINCH_RECT_Y2: i32 = 223;
 const PINCH_MOVE_THRESHOLD: f64 = 8.0;
 
+// ===== 坐标映射与区域判定辅助 =====
 fn focus_pixel_in_widget(
     image: &Image,
     current_pixbuf: &Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
@@ -107,6 +110,7 @@ fn is_in_pinch_rect(
     (min_x..=max_x).contains(&source_x) && (min_y..=max_y).contains(&source_y)
 }
 
+// 读取窗口当前左上角位置，统一用于拖拽结束后持久化
 fn current_window_left_top(window: &ApplicationWindow) -> (i32, i32) {
     let alloc = window.allocation();
     let win_w = alloc.width().max(1);
@@ -142,6 +146,7 @@ fn current_window_left_top(window: &ApplicationWindow) -> (i32, i32) {
     (left, top)
 }
 
+// ===== 长按拖拽总装配 =====
 pub fn setup_long_press_drag(
     window: &ApplicationWindow,
     image: &Image,
@@ -150,6 +155,7 @@ pub fn setup_long_press_drag(
     on_drag_finished: Rc<dyn Fn(i32, i32)>,
     is_shutting_down: Rc<dyn Fn() -> bool>,
 ) {
+    // 统一维护“按下→长按→拖拽/捏持”的状态机
     #[derive(Clone, Copy)]
     struct DragState {
         is_pressed: bool,
@@ -183,6 +189,7 @@ pub fn setup_long_press_drag(
 
     let state = Rc::new(RefCell::new(DragState::default()));
 
+    // ===== 左键按下/抬起：决定是否进入捏持并处理结束收尾 =====
     let click = GestureClick::new();
     click.set_button(1);
     {
@@ -251,6 +258,7 @@ pub fn setup_long_press_drag(
     }
     window.add_controller(click);
 
+    // ===== 拖拽手势：长按达阈值后进入拖拽并更新窗口位置 =====
     let drag = GestureDrag::new();
     drag.set_button(1);
     {

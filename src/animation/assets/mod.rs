@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -5,12 +6,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::config::AnimationPathConfig;
 use crate::stats::PetMode;
 
+// ===== 触摸动画变体模型 =====
 #[derive(Clone, Default)]
 pub(crate) struct TouchVariant {
     key: Option<String>,
     files: Vec<PathBuf>,
 }
 
+// ===== 触摸动画三段式容器（A/B/C） =====
 #[derive(Clone, Default)]
 pub(crate) struct TouchStageVariants {
     stage_a: Vec<TouchVariant>,
@@ -18,6 +21,7 @@ pub(crate) struct TouchStageVariants {
     stage_c: Vec<TouchVariant>,
 }
 
+// ===== 资源分段枚举 =====
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Segment {
     A,
@@ -35,6 +39,7 @@ impl Segment {
     }
 }
 
+// ===== 通用资源路径与扫描工具 =====
 pub(crate) fn body_asset_path(root: &str, relative: &str) -> PathBuf {
     PathBuf::from(root).join(relative)
 }
@@ -122,6 +127,7 @@ pub(crate) fn collect_png_files_recursive_filtered(
     Ok(image_files)
 }
 
+// ===== 模式匹配辅助 =====
 fn mode_keyword(mode: PetMode) -> &'static str {
     match mode {
         PetMode::Happy => "happy",
@@ -219,6 +225,7 @@ pub(crate) fn collect_mode_variant_dirs(root: &Path, mode: PetMode) -> Vec<PathB
     selected
 }
 
+// ===== Startup 资源选择 =====
 pub(crate) fn choose_startup_animation_files(
     startup_root: &Path,
     mode: PetMode,
@@ -271,6 +278,7 @@ pub(crate) fn choose_startup_animation_files(
     Some(available_variants.swap_remove(selected_index))
 }
 
+// ===== Default Idle 资源选择 =====
 pub(crate) fn collect_default_happy_idle_variants(
     animation_config: &AnimationPathConfig,
 ) -> Result<Vec<Vec<PathBuf>>, String> {
@@ -365,6 +373,7 @@ pub(crate) fn select_default_files_for_mode(
     flatten_variants_in_order(happy_variants)
 }
 
+// ===== 通用分段帧加载（A/C/Single + fallback） =====
 fn collect_segment_variants_for_mode(root: &Path, mode: PetMode, segment: Segment) -> Vec<Vec<PathBuf>> {
     let mut mode_dirs: Vec<PathBuf> = collect_png_variant_dirs_recursive(root)
         .into_iter()
@@ -412,6 +421,7 @@ pub(crate) fn load_frames_with_fallback(root: &Path, mode: PetMode, segment: Seg
     variants.swap_remove(pseudo_random_index(variants.len()))
 }
 
+// ===== Drag Raise 资源选择 =====
 pub(crate) fn collect_drag_raise_loop_files(
     raise_dynamic_root: &Path,
     mode: PetMode,
@@ -555,6 +565,7 @@ pub(crate) fn collect_drag_raise_end_variants(
         .collect()
 }
 
+// ===== Pinch 资源选择 =====
 fn collect_pinch_stage_variants(
     pinch_root: &Path,
     mode: PetMode,
@@ -653,6 +664,7 @@ pub(crate) fn collect_pinch_end_files(pinch_root: &Path, mode: PetMode) -> Vec<P
     }
 }
 
+// ===== Shutdown 资源选择 =====
 pub(crate) fn collect_shutdown_variants(shutdown_root: &Path, mode: PetMode) -> Vec<Vec<PathBuf>> {
     collect_mode_variant_dirs(shutdown_root, mode)
         .iter()
@@ -667,6 +679,7 @@ pub(crate) fn collect_shutdown_variants(shutdown_root: &Path, mode: PetMode) -> 
         .collect()
 }
 
+// ===== Touch 资源路径规则辅助 =====
 fn path_matches_mode(path: &Path, mode: PetMode) -> bool {
     path.components().any(|component| {
         component
@@ -755,6 +768,7 @@ fn touch_variant_key(path: &Path, touch_root: &Path, stage_prefix: &str) -> Opti
     }
 }
 
+// ===== Touch 三段变体采集与序列拼装 =====
 fn collect_touch_stage_variants(
     touch_root: &Path,
     mode: PetMode,

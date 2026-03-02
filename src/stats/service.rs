@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
@@ -6,6 +7,7 @@ use crate::config::PanelDebugConfig;
 use super::food::FoodItem;
 use super::model::{InteractType, PetMode, PetStats};
 
+// ===== 系统参数常量 =====
 const LOGIC_INTERVAL_MIN_SECS: f64 = 5.0;
 const LOGIC_INTERVAL_MAX_SECS: f64 = 60.0;
 
@@ -24,6 +26,7 @@ const PINCH_STRENGTH_COST: f64 = 5.0;
 const PINCH_FEELING_GAIN_POSITIVE: f64 = 10.0;
 const PINCH_FEELING_GAIN_NEGATIVE: f64 = -7.0;
 
+// ===== 面板显示上限 =====
 #[derive(Debug, Clone, Copy)]
 struct PanelLimits {
     basic_stat_max: f64,
@@ -41,6 +44,7 @@ impl Default for PanelLimits {
     }
 }
 
+// ===== 宠物数值服务 =====
 #[derive(Debug, Clone)]
 pub struct PetStatsService {
     stats: Rc<RefCell<PetStats>>,
@@ -55,6 +59,7 @@ impl Default for PetStatsService {
 }
 
 impl PetStatsService {
+	// 构造服务并限制逻辑间隔范围
     pub fn new(initial_stats: PetStats, logic_interval_secs: f64) -> Self {
         Self {
             stats: Rc::new(RefCell::new(initial_stats)),
@@ -91,6 +96,7 @@ impl PetStatsService {
         *self.stats.borrow_mut() = next_stats;
     }
 
+	// 每次配置更新都重建数值与显示上限
     pub fn apply_panel_config(&self, panel_config: PanelDebugConfig) {
         {
             let mut limits = self.limits.borrow_mut();
@@ -128,6 +134,7 @@ impl PetStatsService {
         self.logic_interval_secs = clamp_logic_interval(logic_interval_secs);
     }
 
+	// 逻辑 tick：处理自然衰减与升级
     pub fn on_tick(&mut self, delta_secs: f64) {
         if delta_secs <= 0.0 {
             return;
@@ -166,6 +173,7 @@ impl PetStatsService {
         clamp_stats(&mut stats, basic_stat_max);
     }
 
+	// 投喂：恢复基础属性并增加好感
     #[allow(dead_code)]
     pub fn on_feed(&mut self, food: &FoodItem) {
         let basic_stat_max = self.basic_stat_max();
@@ -187,6 +195,7 @@ impl PetStatsService {
         clamp_stats(&mut stats, basic_stat_max);
     }
 
+	// 互动：消耗体力并变化心情/经验
     #[allow(dead_code)]
     pub fn on_interact(&mut self, interact_type: InteractType) {
         let basic_stat_max = self.basic_stat_max();
@@ -219,6 +228,7 @@ impl PetStatsService {
         clamp_stats(&mut stats, basic_stat_max);
     }
 
+	// 心情变化统一入口（并联动好感）
     fn apply_feeling_gain(&mut self, feeling_gain: f64) {
         let raw_feeling = {
             let stats = self.stats.borrow();
@@ -231,6 +241,7 @@ impl PetStatsService {
         stats.feeling = raw_feeling.clamp(0.0, stats.feeling_max);
     }
 
+	// 好感变化统一入口（溢出转为健康）
     fn apply_likability_gain(&mut self, delta: f64) {
         let mut stats = self.stats.borrow_mut();
         let new_val = stats.likability + delta;
@@ -248,6 +259,7 @@ impl PetStatsService {
     }
 }
 
+// ===== 私有辅助函数 =====
 fn apply_level_up_if_needed(stats: &mut PetStats) {
     loop {
         let needed = stats.level_up_exp_needed();

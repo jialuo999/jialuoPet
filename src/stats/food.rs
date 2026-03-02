@@ -1,3 +1,4 @@
+// ===== 投喂物品数值定义 =====
 #[allow(dead_code)]
 pub struct FoodItem {
     pub name: String,

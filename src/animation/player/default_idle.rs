@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use std::path::PathBuf;
 
 use crate::config::AnimationPathConfig;
@@ -9,6 +10,7 @@ use crate::animation::assets::{
     select_default_files_for_mode,
 };
 
+// ===== 默认待机播放器 =====
 pub(crate) struct DefaultIdlePlayer {
     config: AnimationPathConfig,
     current_mode: PetMode,
@@ -21,6 +23,7 @@ pub(crate) struct DefaultIdlePlayer {
 }
 
 impl DefaultIdlePlayer {
+	// 构建并预加载四种模式的候选帧
     pub(crate) fn new(config: &AnimationPathConfig, mode: PetMode) -> Result<Self, String> {
         let default_happy_variants = collect_default_happy_idle_variants(config)?;
         if default_happy_variants.is_empty() {
@@ -52,6 +55,7 @@ impl DefaultIdlePlayer {
         })
     }
 
+	// 根据当前模式刷新选中序列
     fn refresh_selection(&mut self) {
         self.default_files = select_default_files_for_mode(
             self.current_mode,
@@ -63,12 +67,14 @@ impl DefaultIdlePlayer {
         self.default_index = 0;
     }
 
+	// 进入待机时重置并返回首帧
     pub(crate) fn enter(&mut self) -> Option<PathBuf> {
         self.refresh_selection();
         self.default_index = 0;
         self.default_files.first().cloned()
     }
 
+	// 轮播下一帧
     fn next_default_frame(&mut self) -> Option<PathBuf> {
         if self.default_files.is_empty() {
             return None;
@@ -80,6 +86,7 @@ impl DefaultIdlePlayer {
     }
 }
 
+// ===== 通用播放器接口实现 =====
 impl AnimationPlayer for DefaultIdlePlayer {
     fn is_active(&self) -> bool {
         true

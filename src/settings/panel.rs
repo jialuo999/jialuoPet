@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use gtk4::prelude::*;
 use gtk4::{Align, Application, ApplicationWindow, Box, Button, CheckButton, Label, Orientation, Window};
 use std::cell::RefCell;
@@ -5,6 +6,7 @@ use std::rc::Rc;
 
 use super::model::AppSettings;
 
+// ===== 设置面板组件 =====
 pub struct SettingsPanel {
     window: Window,
     remember_position_check: CheckButton,
@@ -18,6 +20,7 @@ impl SettingsPanel {
         initial_settings: AppSettings,
         on_save_settings: Rc<dyn Fn(bool)>,
     ) -> Self {
+        // ===== 窗口与容器 =====
         let window = Window::builder()
             .application(app)
             .title("设置")
@@ -38,15 +41,17 @@ impl SettingsPanel {
         title.set_halign(Align::Start);
         panel_box.append(&title);
 
+        // ===== 选项区 =====
         let remember_position_check = CheckButton::with_label("位置记忆");
         remember_position_check.set_active(initial_settings.remember_position);
         panel_box.append(&remember_position_check);
 
-        // 添加可扩展的空白区域，将按钮挤到底部
+        // ===== 布局占位：将操作按钮压到底部 =====
         let spacer = Box::new(Orientation::Vertical, 0);
         spacer.set_vexpand(true);
         panel_box.append(&spacer);
 
+        // ===== 操作按钮区 =====
         let actions_box = Box::new(Orientation::Horizontal, 8);
         actions_box.set_halign(Align::End); // 按钮靠右对齐
         let save_button = Button::with_label("保存");
@@ -61,6 +66,7 @@ impl SettingsPanel {
 
         let saved_remember_position = Rc::new(RefCell::new(initial_settings.remember_position));
 
+        // ===== 事件绑定：保存 =====
         {
             let remember_position_check = remember_position_check.clone();
             let saved_remember_position = saved_remember_position.clone();
@@ -72,6 +78,7 @@ impl SettingsPanel {
             });
         }
 
+        // ===== 事件绑定：取消（回滚 UI 到上次保存值） =====
         {
             let remember_position_check = remember_position_check.clone();
             let saved_remember_position = saved_remember_position.clone();
@@ -80,6 +87,7 @@ impl SettingsPanel {
             });
         }
 
+        // ===== 事件绑定：退出 =====
         {
             let window = window.clone();
             exit_button.connect_clicked(move |_| {
@@ -87,6 +95,7 @@ impl SettingsPanel {
             });
         }
 
+        // ===== 关闭行为：隐藏窗口而非销毁 =====
         {
             let window_for_close = window.clone();
             window.connect_close_request(move |_| {
@@ -102,6 +111,7 @@ impl SettingsPanel {
         }
     }
 
+    // ===== 面板可见性控制 =====
     pub fn show(&self) {
         self.remember_position_check
             .set_active(*self.saved_remember_position.borrow());

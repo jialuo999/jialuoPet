@@ -1,3 +1,4 @@
+// ===== 依赖导入 =====
 use anyhow::Context;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use once_cell::sync::Lazy;
@@ -6,12 +7,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+// ===== 应用运行时常量 =====
 pub const APP_ID: &str = "com.jialuo.niripet";
 pub const CAROUSEL_INTERVAL_MS: u64 = 130;
 pub const INPUT_DEBUG_LOG: bool = false;
 pub const DRAG_LONG_PRESS_MS: u64 = 450;
 pub const DRAG_ALLOW_OFFSCREEN: bool = true;
 
+// ===== 动画资源路径默认配置 =====
 pub const ASSETS_BODY_ROOT: &str = "assets/body";
 pub const DEFAULT_HAPPY_IDLE_VARIANTS: &[&str] = &[
 	"Default/Happy",
@@ -27,7 +30,7 @@ pub const SHUTDOWN_ROOT: &str = "Shutdown";
 pub const TOUCH_HEAD_ROOT: &str = "Touch_Head";
 pub const TOUCH_BODY_ROOT: &str = "Touch_Body";
 
-// 调试：面板数值控制
+// ===== 面板调试默认值 =====
 pub const PANEL_BASIC_STAT_MAX: u32 = 100;
 pub const PANEL_EXPERIENCE_MAX: u32 = 100;
 pub const PANEL_LEVEL_MAX: u32 = 100;
@@ -41,10 +44,12 @@ pub const PANEL_DEFAULT_AFFINITY: u32 = 50;
 pub const PANEL_DEFAULT_EXPERIENCE: u32 = 10;
 pub const PANEL_DEFAULT_LEVEL: u32 = 3;
 
+// ===== 运行时配置文件与监听器 =====
 pub const RUNTIME_CONFIG_FILE: &str = "config.toml";
 
 static CONFIG_WATCHERS: Lazy<Mutex<Vec<RecommendedWatcher>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
+// ===== 面板配置结构 =====
 #[derive(Clone, Debug)]
 pub struct PanelDebugConfig {
 	pub basic_stat_max: u32,
@@ -79,6 +84,7 @@ impl Default for PanelDebugConfig {
 }
 
 impl PanelDebugConfig {
+	// 归一化配置，确保上下限合法
 	fn sanitized(mut self) -> Self {
 		self.basic_stat_max = self.basic_stat_max.max(1);
 		self.experience_max = self.experience_max.max(1);
@@ -97,6 +103,7 @@ impl PanelDebugConfig {
 	}
 }
 
+// ===== 配置文件反序列化结构 =====
 #[derive(Debug, Default, Deserialize)]
 struct FileConfig {
 	panel: Option<PanelDebugConfigPartial>,
@@ -119,6 +126,7 @@ struct PanelDebugConfigPartial {
 }
 
 impl PanelDebugConfigPartial {
+	// 将部分配置覆盖到完整配置
 	fn merge_into(self, mut base: PanelDebugConfig) -> PanelDebugConfig {
 		if let Some(value) = self.basic_stat_max {
 			base.basic_stat_max = value;
@@ -158,6 +166,7 @@ impl PanelDebugConfigPartial {
 	}
 }
 
+// ===== 动画路径配置结构 =====
 #[derive(Clone, Debug)]
 pub struct AnimationPathConfig {
 	pub assets_body_root: String,
@@ -197,6 +206,7 @@ impl Default for AnimationPathConfig {
 }
 
 impl AnimationPathConfig {
+	// 归一化配置，空字符串回退到默认值
 	fn sanitized(mut self) -> Self {
 		let defaults = AnimationPathConfig::default();
 
@@ -264,6 +274,7 @@ struct AnimationPathConfigPartial {
 }
 
 impl AnimationPathConfigPartial {
+	// 将部分配置覆盖到完整配置
 	fn merge_into(self, mut base: AnimationPathConfig) -> AnimationPathConfig {
 		if let Some(value) = self.assets_body_root {
 			base.assets_body_root = value;
@@ -305,6 +316,7 @@ impl AnimationPathConfigPartial {
 	}
 }
 
+// ===== 配置加载与热更新入口 =====
 pub fn runtime_config_path() -> PathBuf {
 	PathBuf::from(RUNTIME_CONFIG_FILE)
 }
@@ -352,6 +364,7 @@ pub fn start_panel_config_watcher<F>(on_change: F) -> anyhow::Result<()>
 where
 	F: Fn() + Send + Sync + 'static,
 {
+	// 监听配置文件所在目录，筛选目标文件变更事件
 	let config_path = runtime_config_path();
 	let watch_target = config_path
 		.parent()

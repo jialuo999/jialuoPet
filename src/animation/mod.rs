@@ -1,8 +1,10 @@
+// ===== animation 子模块声明 =====
 mod assets;
 mod coordinator;
 mod player;
 mod requests;
 
+// ===== 对外导出 =====
 pub use coordinator::load_carousel_images;
 pub use requests::{
     is_shutdown_animation_finished, request_drag_raise_animation_end,
