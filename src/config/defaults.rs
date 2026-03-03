@@ -24,7 +24,6 @@ pub const TOUCH_BODY_ROOT: &str = "Touch_Body";
 // ===== 面板调试默认值 =====
 pub const PANEL_BASIC_STAT_MAX: u32 = 100;
 pub const PANEL_EXPERIENCE_MAX: u32 = 100;
-pub const PANEL_LEVEL_MAX: u32 = 100;
 
 pub const PANEL_DEFAULT_STAMINA: u32 = 80;
 pub const PANEL_DEFAULT_SATIETY: u32 = 70;

@@ -95,7 +95,7 @@ fn build_ui(app: &Application) {
 
     // ===== 核心运行时状态（当前图像帧 + 宠物数值服务） =====
     let current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(None));
-    let stats_service = PetStatsService::from_panel_config(load_panel_debug_config(), 5.0);
+    let stats_service = PetStatsService::from_panel_config(load_panel_debug_config(), 15.0);
 
     // ===== 加载动画资源并创建主图像控件 =====
     let image = match load_carousel_images(&window, current_pixbuf.clone(), stats_service.clone()) {

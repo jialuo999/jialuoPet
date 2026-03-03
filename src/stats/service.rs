@@ -3,29 +3,31 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use crate::config::PanelDebugConfig;
-use rand::random;
+use rand::{random, Rng};
 
 use super::food::FoodItem;
-use super::model::{InteractType, PetMode, PetStats};
+use super::leveling::{add_exp, likability_max_from_level_state, recalc_caps, PetLevelState};
+use super::model::{InteractType, PetMode, PetRuntimeState, PetStats};
 
 // ===== 系统参数常量 =====
 const LOGIC_INTERVAL_MIN_SECS: f64 = 5.0;
 const LOGIC_INTERVAL_MAX_SECS: f64 = 60.0;
+const REAL_SECS_PER_GAME_MIN: f64 = 300.0;
 
 const HEALTH_MAX: f64 = 100.0;
 
-const DECAY_BALANCE_STRENGTH: f64 = 0.8;
-const DECAY_BALANCE_FOOD_DRINK: f64 = 1.0;
 const INTERACT_MIN_STRENGTH_REQUIRED: f64 = 10.0;
 const INTERACT_STRENGTH_COST: f64 = 2.0;
 const INTERACT_FEELING_GAIN: f64 = 1.0;
+const WORK_BASE_FOOD_COST_PER_GAME_MIN: f64 = 1.0;
+const WORK_BASE_DRINK_COST_PER_GAME_MIN: f64 = 1.0;
+const WORK_BASE_OUTPUT_PER_GAME_MIN: f64 = 100.0;
 
 // ===== 面板显示上限 =====
 #[derive(Debug, Clone, Copy)]
 struct PanelLimits {
     basic_stat_max: f64,
     experience_max: f64,
-    level_max: f64,
 }
 
 impl Default for PanelLimits {
@@ -33,7 +35,6 @@ impl Default for PanelLimits {
         Self {
             basic_stat_max: 100.0,
             experience_max: 100.0,
-            level_max: 100.0,
         }
     }
 }
@@ -43,6 +44,7 @@ impl Default for PanelLimits {
 pub struct PetStatsService {
     stats: Rc<RefCell<PetStats>>,
     limits: Rc<RefCell<PanelLimits>>,
+    runtime_state: Rc<RefCell<PetRuntimeState>>,
     secs_since_last_interact: Rc<RefCell<f64>>,
     logic_interval_secs: f64,
 }
@@ -59,6 +61,7 @@ impl PetStatsService {
         Self {
             stats: Rc::new(RefCell::new(initial_stats)),
             limits: Rc::new(RefCell::new(PanelLimits::default())),
+            runtime_state: Rc::new(RefCell::new(PetRuntimeState::Nomal)),
             secs_since_last_interact: Rc::new(RefCell::new(0.0)),
             logic_interval_secs: clamp_logic_interval(logic_interval_secs),
         }
@@ -75,6 +78,7 @@ impl PetStatsService {
         Self {
             stats,
             limits: Rc::new(RefCell::new(PanelLimits::default())),
+            runtime_state: Rc::new(RefCell::new(PetRuntimeState::Nomal)),
             secs_since_last_interact: Rc::new(RefCell::new(0.0)),
             logic_interval_secs: clamp_logic_interval(logic_interval_secs),
         }
@@ -93,13 +97,21 @@ impl PetStatsService {
         *self.stats.borrow_mut() = next_stats;
     }
 
+    #[allow(dead_code)]
+    pub fn set_runtime_state(&self, runtime_state: PetRuntimeState) {
+        *self.runtime_state.borrow_mut() = runtime_state;
+    }
+
+    pub fn runtime_state(&self) -> PetRuntimeState {
+        *self.runtime_state.borrow()
+    }
+
 	// 每次配置更新都重建数值与显示上限
     pub fn apply_panel_config(&self, panel_config: PanelDebugConfig) {
         {
             let mut limits = self.limits.borrow_mut();
             limits.basic_stat_max = panel_config.basic_stat_max as f64;
             limits.experience_max = panel_config.experience_max as f64;
-            limits.level_max = panel_config.level_max as f64;
         }
         self.replace_stats(panel_config_to_stats(&panel_config));
     }
@@ -109,12 +121,9 @@ impl PetStatsService {
         self.limits.borrow().basic_stat_max
     }
 
+    #[allow(dead_code)]
     pub fn experience_max(&self) -> f64 {
         self.limits.borrow().experience_max
-    }
-
-    pub fn level_max(&self) -> f64 {
-        self.limits.borrow().level_max
     }
 
     #[allow(dead_code)]
@@ -138,24 +147,23 @@ impl PetStatsService {
             return;
         }
 
-        let scale = delta_secs / self.logic_interval_secs;
+        let game_minutes = delta_secs / REAL_SECS_PER_GAME_MIN;
 
         {
             let mut secs_since_last_interact = self.secs_since_last_interact.borrow_mut();
             *secs_since_last_interact += delta_secs;
         }
 
-        {
-            let mut stats = self.stats.borrow_mut();
-            stats.strength_food -= DECAY_BALANCE_FOOD_DRINK * scale;
-            stats.strength_drink -= DECAY_BALANCE_FOOD_DRINK * scale;
-            stats.strength -= DECAY_BALANCE_STRENGTH * scale;
+        match self.runtime_state() {
+            PetRuntimeState::Sleep => self.apply_sleep_tick(game_minutes),
+            PetRuntimeState::Work => self.apply_work_tick(game_minutes),
+            PetRuntimeState::Nomal => self.apply_nomal_tick(game_minutes),
         }
 
-        self.apply_interaction_decay(scale);
+        self.apply_interaction_decay(game_minutes);
         self.apply_negative_penalties();
-        self.apply_global_feeling_bonus(scale);
-        self.apply_global_drink_effect(scale);
+        self.apply_global_feeling_bonus(game_minutes);
+        self.apply_global_drink_effect(game_minutes);
 
         let mut stats = self.stats.borrow_mut();
         clamp_stats(&mut stats);
@@ -248,6 +256,111 @@ impl PetStatsService {
         }
     }
 
+    fn apply_sleep_tick(&mut self, game_minutes: f64) {
+        let mut stats = self.stats.borrow_mut();
+        let low_food = stats.strength_max * 0.25;
+        let high_food = stats.strength_max * 0.75;
+        let high_drink = stats.strength_max * 0.75;
+
+        stats.strength += game_minutes * 2.0;
+        stats.strength_food += game_minutes * 1.0;
+        stats.strength_drink += game_minutes * 1.0;
+        stats.exp += game_minutes;
+
+        if stats.strength_food <= low_food {
+            stats.strength_food += game_minutes * 1.0;
+        }
+        if stats.strength_drink >= high_drink {
+            stats.strength_drink += game_minutes * 1.0;
+        }
+        if stats.strength_food >= high_food {
+            stats.health += game_minutes;
+        }
+        if stats.strength_drink >= high_drink {
+            stats.health += game_minutes;
+        }
+    }
+
+    fn apply_work_tick(&mut self, game_minutes: f64) {
+        let mut stats = self.stats.borrow_mut();
+
+        let needed_food = WORK_BASE_FOOD_COST_PER_GAME_MIN * game_minutes;
+        let needed_drink = WORK_BASE_DRINK_COST_PER_GAME_MIN * game_minutes;
+        let low_threshold = stats.strength_max * 0.25;
+        let high_threshold = stats.strength_max * 0.60;
+
+        let mut efficiency = 0.0;
+
+        if stats.strength > stats.strength_max * 0.25 + needed_food * 0.3 + needed_drink * 0.3 {
+            efficiency += 0.1;
+            stats.strength -= (needed_food + needed_drink) * 0.3;
+        }
+
+        let food_cost = if stats.strength_food <= low_threshold {
+            efficiency += 0.2;
+            if stats.strength >= needed_food {
+                efficiency += 0.1;
+            }
+            needed_food * 0.5
+        } else {
+            efficiency += 0.4;
+            if stats.strength_food >= high_threshold {
+                efficiency += 0.1;
+            }
+            needed_food
+        };
+
+        let drink_cost = if stats.strength_drink <= low_threshold {
+            efficiency += 0.2;
+            if stats.strength >= needed_drink {
+                efficiency += 0.1;
+            }
+            needed_drink * 0.5
+        } else {
+            efficiency += 0.4;
+            if stats.strength_drink >= high_threshold {
+                efficiency += 0.1;
+            }
+            needed_drink
+        };
+
+        stats.strength_food -= food_cost;
+        stats.strength_drink -= drink_cost;
+        stats.health -= 2.0 * game_minutes;
+
+        if stats.strength_food >= high_threshold || stats.strength_drink >= high_threshold {
+            let bonus = rand::thread_rng().gen_range(1.0..=3.0);
+            stats.health += bonus * game_minutes;
+        }
+
+        let base_output = WORK_BASE_OUTPUT_PER_GAME_MIN * game_minutes;
+        let output = (base_output * (2.0 * efficiency - 0.5)).max(0.0);
+        stats.exp += output;
+    }
+
+    fn apply_nomal_tick(&mut self, game_minutes: f64) {
+        let mut stats = self.stats.borrow_mut();
+        let half = stats.strength_max * 0.5;
+        let quarter = stats.strength_max * 0.25;
+
+        if stats.strength_food >= half {
+            stats.strength_food -= game_minutes;
+        } else if stats.strength_food <= quarter {
+            stats.strength_food += 0.0;
+        }
+
+        if stats.strength_drink >= half {
+            stats.strength_drink -= 2.0 * game_minutes;
+            stats.strength += game_minutes;
+        } else if stats.strength_drink <= quarter {
+            stats.strength_drink += 0.0;
+        }
+
+        let random_health_drift = (random::<f64>() - 0.5) * game_minutes;
+        stats.health += random_health_drift;
+        stats.exp += game_minutes;
+    }
+
     fn apply_interaction_decay(&mut self, time_scale: f64) {
         let idle_minutes = *self.secs_since_last_interact.borrow() / 60.0;
         if idle_minutes < 1.0 {
@@ -315,25 +428,23 @@ impl PetStatsService {
 
 // ===== 私有辅助函数 =====
 fn apply_level_up_if_needed(stats: &mut PetStats) {
-    loop {
-        let needed = stats.level_up_exp_needed();
-        if stats.exp < needed {
-            break;
-        }
+    let mut level_state = PetLevelState {
+        level: stats.level.max(1),
+        level_max: stats.level_stage,
+        exp: stats.exp,
+        likability_max: stats.likability_max,
+        strength_max: stats.strength_max,
+        feeling_max: stats.feeling_max,
+    };
 
-        stats.exp -= needed;
-        stats.level = stats.level.saturating_add(1);
+    add_exp(&mut level_state, 0.0);
 
-        let stage_gate = 1000_u32.saturating_add(stats.level_stage.saturating_mul(100));
-        if stats.level > stage_gate {
-            stats.level_stage = stats.level_stage.saturating_add(1);
-            stats.level = 100_u32.saturating_mul(stats.level_stage).max(1);
-        }
-
-        stats.feeling_max = PetStats::feeling_max_for_level(stats.level, stats.level_stage);
-        stats.likability_max = PetStats::likability_max_for_level(stats.level);
-        stats.strength_max = PetStats::strength_max_for_level(stats.level, stats.level_stage);
-    }
+    stats.level = level_state.level;
+    stats.level_stage = level_state.level_max;
+    stats.exp = level_state.exp;
+    stats.likability_max = level_state.likability_max;
+    stats.strength_max = level_state.strength_max;
+    stats.feeling_max = level_state.feeling_max;
 }
 
 fn clamp_stats(stats: &mut PetStats) {
@@ -361,23 +472,30 @@ fn clamp_stats(stats: &mut PetStats) {
 fn panel_config_to_stats(panel_config: &PanelDebugConfig) -> PetStats {
     let requested_level = panel_config.default_level.max(1);
     let (level, level_stage) = normalize_level_and_stage(requested_level);
-    let feeling_max = PetStats::feeling_max_for_level(level, level_stage);
-    let strength_max = PetStats::strength_max_for_level(level, level_stage);
-    let likability_max = PetStats::likability_max_for_level(level);
+    let mut level_state = PetLevelState {
+        level,
+        level_max: level_stage,
+        exp: panel_config.default_experience as f64,
+        likability_max: likability_max_from_level_state(level, level_stage),
+        strength_max: 100.0,
+        feeling_max: 100.0,
+    };
+    recalc_caps(&mut level_state);
+    add_exp(&mut level_state, 0.0);
 
     PetStats {
         health: (panel_config.default_health as f64).clamp(0.0, HEALTH_MAX),
-        feeling: (panel_config.default_mood as f64).clamp(0.0, feeling_max),
-        feeling_max,
-        likability_max,
-        strength: (panel_config.default_stamina as f64).clamp(0.0, strength_max),
-        strength_max,
-        strength_food: (panel_config.default_satiety as f64).clamp(0.0, strength_max),
-        strength_drink: (panel_config.default_thirst as f64).clamp(0.0, strength_max),
-        likability: (panel_config.default_affinity as f64).clamp(0.0, likability_max),
-        level,
-        level_stage,
-        exp: panel_config.default_experience as f64,
+        feeling: (panel_config.default_mood as f64).clamp(0.0, level_state.feeling_max),
+        feeling_max: level_state.feeling_max,
+        likability_max: level_state.likability_max,
+        strength: (panel_config.default_stamina as f64).clamp(0.0, level_state.strength_max),
+        strength_max: level_state.strength_max,
+        strength_food: (panel_config.default_satiety as f64).clamp(0.0, level_state.strength_max),
+        strength_drink: (panel_config.default_thirst as f64).clamp(0.0, level_state.strength_max),
+        likability: (panel_config.default_affinity as f64).clamp(0.0, level_state.likability_max),
+        level: level_state.level,
+        level_stage: level_state.level_max,
+        exp: level_state.exp,
     }
 }
 

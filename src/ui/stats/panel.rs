@@ -22,7 +22,6 @@ pub struct StatsPanel {
     affinity_value: Label,
     experience_bar: ProgressBar,
     experience_value: Label,
-    level_bar: ProgressBar,
     level_value: Label,
     mode_value: Label,
 }
@@ -65,7 +64,7 @@ impl StatsPanel {
         let (health_row, health_bar, health_value) = build_stat_row("健康");
         let (affinity_row, affinity_bar, affinity_value) = build_stat_row("好感度");
         let (experience_row, experience_bar, experience_value) = build_stat_row("经验值");
-        let (level_row, level_bar, level_value) = build_stat_row("等级");
+        let (level_row, level_value) = build_value_row("等级");
 
         root.append(&stamina_row);
         root.append(&satiety_row);
@@ -96,7 +95,6 @@ impl StatsPanel {
             affinity_value,
             experience_bar,
             experience_value,
-            level_bar,
             level_value,
             mode_value,
         };
@@ -129,8 +127,7 @@ impl StatsPanel {
     pub fn refresh(&self) {
         let stats = self.stats_service.get_stats();
         let mode = self.stats_service.cal_mode();
-        let experience_max = self.stats_service.experience_max();
-        let level_max = self.stats_service.level_max();
+        let experience_need = stats.level_up_exp_needed();
 
         set_bar_value(
             &self.stamina_bar,
@@ -167,14 +164,9 @@ impl StatsPanel {
             &self.experience_bar,
             &self.experience_value,
             stats.exp,
-            experience_max,
+            experience_need,
         );
-        set_bar_value(
-            &self.level_bar,
-            &self.level_value,
-            stats.level as f64,
-            level_max,
-        );
+        self.level_value.set_text(&format!("Lev:{}", stats.level));
         self.mode_value.set_text(mode_label(mode));
     }
 }
@@ -201,6 +193,23 @@ fn build_stat_row(name: &str) -> (Box, ProgressBar, Label) {
     row.append(&value);
 
     (row, bar, value)
+}
+
+fn build_value_row(name: &str) -> (Box, Label) {
+    let row = Box::new(Orientation::Horizontal, 6);
+
+    let label = Label::new(Some(name));
+    label.set_halign(Align::Start);
+    label.set_width_chars(6);
+
+    let value = Label::new(None);
+    value.set_halign(Align::End);
+    value.set_hexpand(true);
+
+    row.append(&label);
+    row.append(&value);
+
+    (row, value)
 }
 
 fn set_bar_value(bar: &ProgressBar, value_label: &Label, value: f64, max: f64) {

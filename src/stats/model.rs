@@ -15,6 +15,14 @@ pub enum InteractType {
     Pinch,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PetRuntimeState {
+    Sleep,
+    Work,
+    Nomal,
+}
+
 // ===== 宠物核心数值模型 =====
 #[derive(Debug, Clone)]
 pub struct PetStats {
@@ -37,7 +45,7 @@ impl Default for PetStats {
         let level = 1;
         let level_stage = 0;
         let feeling_max = Self::feeling_max_for_level(level, level_stage);
-        let likability_max = Self::likability_max_for_level(level);
+        let likability_max = Self::initial_likability_max();
         let strength_max = Self::strength_max_for_level(level, level_stage);
 
         Self {
@@ -108,6 +116,7 @@ impl PetStats {
     }
 
 	// 升级所需经验
+    #[allow(dead_code)]
     pub fn level_up_exp_needed(&self) -> f64 {
         200.0 * self.level as f64 - 100.0
     }
@@ -125,7 +134,7 @@ impl PetStats {
         100.0 + ((level_f * (1.0 + level_stage_f)).powf(0.75) * 4.0).floor()
     }
 
-    pub fn likability_max_for_level(level: u32) -> f64 {
-        90.0 + level as f64 * 10.0
+    pub fn initial_likability_max() -> f64 {
+        100.0
     }
 }

@@ -6,7 +6,7 @@ use super::defaults::{
 	DEFAULT_NOMAL_IDLE_ROOT, DEFAULT_POOR_CONDITION_IDLE_ROOT, PANEL_BASIC_STAT_MAX,
 	PANEL_DEFAULT_AFFINITY, PANEL_DEFAULT_EXPERIENCE, PANEL_DEFAULT_HEALTH,
 	PANEL_DEFAULT_LEVEL, PANEL_DEFAULT_MOOD, PANEL_DEFAULT_SATIETY, PANEL_DEFAULT_STAMINA,
-	PANEL_DEFAULT_THIRST, PANEL_EXPERIENCE_MAX, PANEL_LEVEL_MAX, PINCH_ROOT,
+	PANEL_DEFAULT_THIRST, PANEL_EXPERIENCE_MAX, PINCH_ROOT,
 	RAISE_DYNAMIC_ROOT, RAISE_STATIC_ROOT, SHUTDOWN_ROOT, STARTUP_ROOT, TOUCH_BODY_ROOT,
 	TOUCH_HEAD_ROOT,
 };
@@ -16,7 +16,6 @@ use super::defaults::{
 pub struct PanelDebugConfig {
 	pub basic_stat_max: u32,
 	pub experience_max: u32,
-	pub level_max: u32,
 	pub default_stamina: u32,
 	pub default_satiety: u32,
 	pub default_thirst: u32,
@@ -32,7 +31,6 @@ impl Default for PanelDebugConfig {
 		Self {
 			basic_stat_max: PANEL_BASIC_STAT_MAX,
 			experience_max: PANEL_EXPERIENCE_MAX,
-			level_max: PANEL_LEVEL_MAX,
 			default_stamina: PANEL_DEFAULT_STAMINA,
 			default_satiety: PANEL_DEFAULT_SATIETY,
 			default_thirst: PANEL_DEFAULT_THIRST,
@@ -50,7 +48,6 @@ impl PanelDebugConfig {
 	pub(crate) fn sanitized(mut self) -> Self {
 		self.basic_stat_max = self.basic_stat_max.max(1);
 		self.experience_max = self.experience_max.max(1);
-		self.level_max = self.level_max.max(1);
 
 		self.default_stamina = self.default_stamina.min(self.basic_stat_max);
 		self.default_satiety = self.default_satiety.min(self.basic_stat_max);
@@ -59,7 +56,7 @@ impl PanelDebugConfig {
 		self.default_health = self.default_health.min(self.basic_stat_max);
 		self.default_affinity = self.default_affinity.min(self.basic_stat_max);
 		self.default_experience = self.default_experience.min(self.experience_max);
-		self.default_level = self.default_level.min(self.level_max);
+		self.default_level = self.default_level.max(1);
 
 		self
 	}
@@ -76,7 +73,6 @@ pub(crate) struct FileConfig {
 pub(crate) struct PanelDebugConfigPartial {
 	basic_stat_max: Option<u32>,
 	experience_max: Option<u32>,
-	level_max: Option<u32>,
 	default_stamina: Option<u32>,
 	default_satiety: Option<u32>,
 	default_thirst: Option<u32>,
@@ -95,9 +91,6 @@ impl PanelDebugConfigPartial {
 		}
 		if let Some(value) = self.experience_max {
 			base.experience_max = value;
-		}
-		if let Some(value) = self.level_max {
-			base.level_max = value;
 		}
 		if let Some(value) = self.default_stamina {
 			base.default_stamina = value;

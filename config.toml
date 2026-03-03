@@ -11,7 +11,7 @@ default_mood = 80
 default_health = 80
 default_affinity = 80
 default_experience = 80
-default_level = 100
+default_level = 1
 [animation]
 # 动画资源根目录（相对/绝对路径都可）
 assets_body_root = "assets/body"
