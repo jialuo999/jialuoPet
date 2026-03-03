@@ -129,7 +129,6 @@ impl StatsPanel {
     pub fn refresh(&self) {
         let stats = self.stats_service.get_stats();
         let mode = self.stats_service.cal_mode();
-        let basic_stat_max = self.stats_service.basic_stat_max();
         let experience_max = self.stats_service.experience_max();
         let level_max = self.stats_service.level_max();
 
@@ -137,32 +136,32 @@ impl StatsPanel {
             &self.stamina_bar,
             &self.stamina_value,
             stats.strength,
-            basic_stat_max,
+            stats.strength_max,
         );
         set_bar_value(
             &self.satiety_bar,
             &self.satiety_value,
             stats.strength_food,
-            basic_stat_max,
+            stats.strength_max,
         );
         set_bar_value(
             &self.thirst_bar,
             &self.thirst_value,
             stats.strength_drink,
-            basic_stat_max,
+            stats.strength_max,
         );
-        set_bar_value(&self.mood_bar, &self.mood_value, stats.feeling, basic_stat_max);
+        set_bar_value(&self.mood_bar, &self.mood_value, stats.feeling, stats.feeling_max);
         set_bar_value(
             &self.health_bar,
             &self.health_value,
             stats.health,
-            basic_stat_max,
+            100.0,
         );
         set_bar_value(
             &self.affinity_bar,
             &self.affinity_value,
             stats.likability,
-            basic_stat_max,
+            stats.likability_max,
         );
         set_bar_value(
             &self.experience_bar,

@@ -28,15 +28,17 @@ pub struct PetStats {
     pub strength_drink: f64,
     pub likability: f64,
     pub level: u32,
+    pub level_stage: u32,
     pub exp: f64,
 }
 
 impl Default for PetStats {
     fn default() -> Self {
         let level = 1;
-        let feeling_max = Self::feeling_max_for_level(level);
+        let level_stage = 0;
+        let feeling_max = Self::feeling_max_for_level(level, level_stage);
         let likability_max = Self::likability_max_for_level(level);
-        let strength_max = Self::strength_max_for_level(level);
+        let strength_max = Self::strength_max_for_level(level, level_stage);
 
         Self {
             health: 100.0,
@@ -49,6 +51,7 @@ impl Default for PetStats {
             strength_drink: 100.0,
             likability: 0.0,
             level,
+            level_stage,
             exp: 0.0,
         }
     }
@@ -110,14 +113,16 @@ impl PetStats {
     }
 
 	// 随等级增长的上限曲线
-    pub fn feeling_max_for_level(level: u32) -> f64 {
+    pub fn feeling_max_for_level(level: u32, level_stage: u32) -> f64 {
         let level_f = level as f64;
-        100.0 + (level_f * (1.0 + level_f)).powf(0.75) * 2.0
+        let level_stage_f = level_stage as f64;
+        100.0 + ((level_f * (1.0 + level_stage_f)).powf(0.75) * 2.0).floor()
     }
 
-    pub fn strength_max_for_level(level: u32) -> f64 {
+    pub fn strength_max_for_level(level: u32, level_stage: u32) -> f64 {
         let level_f = level as f64;
-        100.0 + (level_f * (1.0 + level_f)).powf(0.75) * 4.0
+        let level_stage_f = level_stage as f64;
+        100.0 + ((level_f * (1.0 + level_stage_f)).powf(0.75) * 4.0).floor()
     }
 
     pub fn likability_max_for_level(level: u32) -> f64 {

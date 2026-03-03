@@ -12,18 +12,10 @@ use super::model::{InteractType, PetMode, PetStats};
 const LOGIC_INTERVAL_MIN_SECS: f64 = 5.0;
 const LOGIC_INTERVAL_MAX_SECS: f64 = 60.0;
 
-const DECAY_BASE: f64 = 1.0;
 const HEALTH_MAX: f64 = 100.0;
 
-const DECAY_BALANCE_FOOD_DRINK: f64 = 1.0;
 const DECAY_BALANCE_STRENGTH: f64 = 0.8;
-const DECAY_BALANCE_FEELING: f64 = 0.5;
-const DECAY_BALANCE_HEALTH: f64 = 0.3;
-const FOOD_AUTO_CONSUME_HIGH_RATIO: f64 = 0.5;
-const FOOD_HEALTH_RISK_LOW_RATIO: f64 = 0.25;
-const AUTO_CONSUME_FOOD_TO_STRENGTH_RATE: f64 = 1.0;
-const FEELING_DROP_IDLE_MULTIPLIER_CAP: f64 = 3.0;
-const FEELING_DROP_IDLE_REF_SECS: f64 = 60.0;
+const DECAY_BALANCE_FOOD_DRINK: f64 = 1.0;
 const INTERACT_MIN_STRENGTH_REQUIRED: f64 = 10.0;
 const INTERACT_STRENGTH_COST: f64 = 2.0;
 const INTERACT_FEELING_GAIN: f64 = 1.0;
@@ -112,6 +104,7 @@ impl PetStatsService {
         self.replace_stats(panel_config_to_stats(&panel_config));
     }
 
+    #[allow(dead_code)]
     pub fn basic_stat_max(&self) -> f64 {
         self.limits.borrow().basic_stat_max
     }
@@ -145,59 +138,34 @@ impl PetStatsService {
             return;
         }
 
-        let scale = (delta_secs / self.logic_interval_secs) * DECAY_BASE;
+        let scale = delta_secs / self.logic_interval_secs;
 
         {
             let mut secs_since_last_interact = self.secs_since_last_interact.borrow_mut();
             *secs_since_last_interact += delta_secs;
         }
 
-        let secs_since_last_interact = *self.secs_since_last_interact.borrow();
-        let idle_multiplier =
-            (1.0 + secs_since_last_interact / FEELING_DROP_IDLE_REF_SECS)
-                .min(FEELING_DROP_IDLE_MULTIPLIER_CAP);
-        let freedrop = DECAY_BALANCE_FEELING * scale * idle_multiplier;
-
-        let basic_stat_max = self.basic_stat_max();
-        let mut stats = self.stats.borrow_mut();
-        let food_half_threshold = basic_stat_max * FOOD_AUTO_CONSUME_HIGH_RATIO;
-        let food_quarter_threshold = basic_stat_max * FOOD_HEALTH_RISK_LOW_RATIO;
-
-        stats.strength_food -= DECAY_BALANCE_FOOD_DRINK * scale;
-        stats.strength_drink -= DECAY_BALANCE_FOOD_DRINK * scale;
-        stats.strength -= DECAY_BALANCE_STRENGTH * scale;
-
-        if stats.strength_food >= food_half_threshold {
-            stats.strength_food -= AUTO_CONSUME_FOOD_TO_STRENGTH_RATE * scale;
-            stats.strength += AUTO_CONSUME_FOOD_TO_STRENGTH_RATE * scale;
-        } else if stats.strength_food <= food_quarter_threshold {
-            stats.health -= random::<f64>() * scale;
+        {
+            let mut stats = self.stats.borrow_mut();
+            stats.strength_food -= DECAY_BALANCE_FOOD_DRINK * scale;
+            stats.strength_drink -= DECAY_BALANCE_FOOD_DRINK * scale;
+            stats.strength -= DECAY_BALANCE_STRENGTH * scale;
         }
 
-        let raw_feeling = stats.feeling - freedrop;
-        stats.feeling = raw_feeling;
-
-        if raw_feeling < 20.0 && stats.strength_food < 10.0 && stats.strength_drink < 10.0 {
-            stats.health -= DECAY_BALANCE_HEALTH * scale;
-        }
-        drop(stats);
-
-        if raw_feeling < 0.0 {
-            self.apply_likability_gain(raw_feeling / 2.0);
-        }
+        self.apply_interaction_decay(scale);
+        self.apply_negative_penalties();
+        self.apply_global_feeling_bonus(scale);
+        self.apply_global_drink_effect(scale);
 
         let mut stats = self.stats.borrow_mut();
-
-        clamp_stats(&mut stats, basic_stat_max);
+        clamp_stats(&mut stats);
         apply_level_up_if_needed(&mut stats);
-        clamp_stats(&mut stats, basic_stat_max);
+        clamp_stats(&mut stats);
     }
 
 	// 投喂：恢复基础属性并增加好感
     #[allow(dead_code)]
     pub fn on_feed(&mut self, food: &FoodItem) {
-        let basic_stat_max = self.basic_stat_max();
-
         self.apply_likability_gain(food.likability);
 
         let bonus = {
@@ -212,14 +180,12 @@ impl PetStatsService {
         stats.strength_food += food.strength_food * recover_factor;
         stats.strength_drink += food.strength_drink * recover_factor;
 
-        clamp_stats(&mut stats, basic_stat_max);
+        clamp_stats(&mut stats);
     }
 
 	// 互动：消耗体力并变化心情/经验
     #[allow(dead_code)]
     pub fn on_interact(&mut self, _interact_type: InteractType) -> bool {
-        let basic_stat_max = self.basic_stat_max();
-
         let (can_animate, should_apply_effect) = {
             let stats = self.stats.borrow();
             let has_enough_strength = stats.strength >= INTERACT_MIN_STRENGTH_REQUIRED;
@@ -249,9 +215,9 @@ impl PetStatsService {
 
         let mut stats = self.stats.borrow_mut();
 
-        clamp_stats(&mut stats, basic_stat_max);
+        clamp_stats(&mut stats);
         apply_level_up_if_needed(&mut stats);
-        clamp_stats(&mut stats, basic_stat_max);
+        clamp_stats(&mut stats);
 
         true
     }
@@ -282,6 +248,66 @@ impl PetStatsService {
         }
     }
 
+    fn apply_interaction_decay(&mut self, time_scale: f64) {
+        let idle_minutes = *self.secs_since_last_interact.borrow() / 60.0;
+        if idle_minutes < 1.0 {
+            return;
+        }
+
+        let mut stats = self.stats.borrow_mut();
+        let feeling_decay = (idle_minutes.sqrt() * time_scale / 4.0).min(stats.feeling_max / 800.0);
+        stats.feeling -= feeling_decay;
+    }
+
+    fn apply_negative_penalties(&mut self) {
+        let mut stats = self.stats.borrow_mut();
+
+        if stats.strength_food <= 0.0 {
+            stats.health += stats.strength_food;
+            stats.strength_food = 0.0;
+        }
+
+        if stats.strength_drink <= 0.0 {
+            stats.health += stats.strength_drink;
+            stats.strength_drink = 0.0;
+        }
+
+        if stats.feeling <= 0.0 {
+            let feeling_penalty = stats.feeling / 2.0;
+            stats.health += feeling_penalty;
+            stats.likability += feeling_penalty;
+            stats.feeling = 0.0;
+        }
+    }
+
+    fn apply_global_feeling_bonus(&mut self, time_scale: f64) {
+        let mut stats = self.stats.borrow_mut();
+
+        if stats.feeling >= stats.feeling_max * 0.75 {
+            if stats.feeling >= stats.feeling_max * 0.90 {
+                stats.likability += time_scale;
+            }
+            stats.exp += time_scale * 2.0;
+            stats.health += time_scale;
+        } else if stats.feeling <= 25.0 {
+            stats.likability -= time_scale;
+            stats.exp -= time_scale;
+        }
+    }
+
+    fn apply_global_drink_effect(&mut self, time_scale: f64) {
+        let mut stats = self.stats.borrow_mut();
+        let quarter = stats.strength_max * 0.25;
+        let three_quarters = stats.strength_max * 0.75;
+
+        if stats.strength_drink <= quarter {
+            stats.health -= random_binary_f64() * time_scale;
+            stats.exp -= time_scale;
+        } else if stats.strength_drink >= three_quarters {
+            stats.health += random_binary_f64() * time_scale;
+        }
+    }
+
     pub fn cal_mode(&self) -> PetMode {
         self.stats.borrow().cal_mode()
     }
@@ -297,39 +323,60 @@ fn apply_level_up_if_needed(stats: &mut PetStats) {
 
         stats.exp -= needed;
         stats.level = stats.level.saturating_add(1);
-        stats.feeling_max = PetStats::feeling_max_for_level(stats.level);
+
+        let stage_gate = 1000_u32.saturating_add(stats.level_stage.saturating_mul(100));
+        if stats.level > stage_gate {
+            stats.level_stage = stats.level_stage.saturating_add(1);
+            stats.level = 100_u32.saturating_mul(stats.level_stage).max(1);
+        }
+
+        stats.feeling_max = PetStats::feeling_max_for_level(stats.level, stats.level_stage);
         stats.likability_max = PetStats::likability_max_for_level(stats.level);
-        stats.strength_max = PetStats::strength_max_for_level(stats.level);
+        stats.strength_max = PetStats::strength_max_for_level(stats.level, stats.level_stage);
     }
 }
 
-fn clamp_stats(stats: &mut PetStats, basic_stat_max: f64) {
-    let base_max = basic_stat_max.max(1.0);
+fn clamp_stats(stats: &mut PetStats) {
+    let strength_max = stats.strength_max.max(0.0);
+    let feeling_max = stats.feeling_max.max(0.0);
+    let likability_max = stats.likability_max.max(0.0);
+
+    if stats.likability > likability_max {
+        let overflow = stats.likability - likability_max;
+        stats.likability = likability_max;
+        stats.health += overflow;
+    } else {
+        stats.likability = stats.likability.max(0.0);
+    }
 
     stats.health = stats.health.clamp(0.0, HEALTH_MAX);
-    stats.feeling = stats.feeling.clamp(0.0, stats.feeling_max.max(0.0));
-    stats.strength = stats.strength.clamp(0.0, stats.strength_max.max(0.0));
-    stats.strength_food = stats.strength_food.clamp(0.0, base_max);
-    stats.strength_drink = stats.strength_drink.clamp(0.0, base_max);
-    stats.likability = stats.likability.clamp(0.0, stats.likability_max.max(0.0));
+    stats.feeling = stats.feeling.clamp(0.0, feeling_max);
+    stats.strength = stats.strength.clamp(0.0, strength_max);
+    stats.strength_food = stats.strength_food.clamp(0.0, strength_max);
+    stats.strength_drink = stats.strength_drink.clamp(0.0, strength_max);
+    stats.likability = stats.likability.clamp(0.0, likability_max);
     stats.exp = stats.exp.max(0.0);
 }
 
 fn panel_config_to_stats(panel_config: &PanelDebugConfig) -> PetStats {
-    let level = panel_config.default_level.max(1);
-    let basic_stat_max = panel_config.basic_stat_max as f64;
+    let requested_level = panel_config.default_level.max(1);
+    let (level, level_stage) = normalize_level_and_stage(requested_level);
+    let feeling_max = PetStats::feeling_max_for_level(level, level_stage);
+    let strength_max = PetStats::strength_max_for_level(level, level_stage);
+    let likability_max = PetStats::likability_max_for_level(level);
 
     PetStats {
-        health: panel_config.default_health as f64,
-        feeling: panel_config.default_mood as f64,
-        feeling_max: basic_stat_max,
-        likability_max: PetStats::likability_max_for_level(level),
-        strength: panel_config.default_stamina as f64,
-        strength_max: basic_stat_max,
-        strength_food: panel_config.default_satiety as f64,
-        strength_drink: panel_config.default_thirst as f64,
-        likability: panel_config.default_affinity as f64,
+        health: (panel_config.default_health as f64).clamp(0.0, HEALTH_MAX),
+        feeling: (panel_config.default_mood as f64).clamp(0.0, feeling_max),
+        feeling_max,
+        likability_max,
+        strength: (panel_config.default_stamina as f64).clamp(0.0, strength_max),
+        strength_max,
+        strength_food: (panel_config.default_satiety as f64).clamp(0.0, strength_max),
+        strength_drink: (panel_config.default_thirst as f64).clamp(0.0, strength_max),
+        likability: (panel_config.default_affinity as f64).clamp(0.0, likability_max),
         level,
+        level_stage,
         exp: panel_config.default_experience as f64,
     }
 }
@@ -347,4 +394,29 @@ fn likability_bonus(likability: f64) -> f64 {
 
 fn clamp_logic_interval(value: f64) -> f64 {
     value.clamp(LOGIC_INTERVAL_MIN_SECS, LOGIC_INTERVAL_MAX_SECS)
+}
+
+fn normalize_level_and_stage(level: u32) -> (u32, u32) {
+    let mut current_level = level.max(1);
+    let mut level_stage = 0_u32;
+
+    loop {
+        let stage_gate = 1000_u32.saturating_add(level_stage.saturating_mul(100));
+        if current_level <= stage_gate {
+            break;
+        }
+
+        level_stage = level_stage.saturating_add(1);
+        current_level = 100_u32.saturating_mul(level_stage).max(1);
+    }
+
+    (current_level, level_stage)
+}
+
+fn random_binary_f64() -> f64 {
+    if random::<bool>() {
+        1.0
+    } else {
+        0.0
+    }
 }
