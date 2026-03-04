@@ -247,9 +247,21 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         return;
     }
 
+    if players.side_hide_right_rise.is_active() {
+        let should_interrupt_to_end = matches!(
+            reqs.pinch,
+            PINCH_ANIM_START_REQUESTED | PINCH_ANIM_LOOP_REQUESTED | PINCH_ANIM_END_REQUESTED
+        ) || matches!(reqs.touch, TOUCH_ANIM_HEAD_REQUESTED | TOUCH_ANIM_BODY_REQUESTED)
+            || reqs.hover == HOVER_ANIM_END_REQUESTED;
+
+        if should_interrupt_to_end {
+            players.side_hide_right_rise.interrupt(false);
+        }
+        return;
+    }
+
     if players.side_hide_right_main.is_active() {
         if reqs.hover == HOVER_ANIM_START_REQUESTED {
-            players.side_hide_right_main.stop();
             players.side_hide_right_rise.start();
             return;
         }
@@ -261,19 +273,6 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
 
         if should_interrupt_to_end {
             players.side_hide_right_main.interrupt(false);
-        }
-        return;
-    }
-
-    if players.side_hide_right_rise.is_active() {
-        let should_interrupt_to_end = matches!(
-            reqs.pinch,
-            PINCH_ANIM_START_REQUESTED | PINCH_ANIM_LOOP_REQUESTED | PINCH_ANIM_END_REQUESTED
-        ) || matches!(reqs.touch, TOUCH_ANIM_HEAD_REQUESTED | TOUCH_ANIM_BODY_REQUESTED)
-            || reqs.hover == HOVER_ANIM_END_REQUESTED;
-
-        if should_interrupt_to_end {
-            players.side_hide_right_rise.interrupt(false);
         }
         return;
     }

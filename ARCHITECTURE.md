@@ -107,11 +107,12 @@
 
 - 鼠标进入人物区域时触发 `side_hide_right_rise`，播放链路遵循目录命名：`A -> B 循环`。
 - 鼠标离开人物区域时发送结束请求，播放 `C` 段收尾。
+- 若触发时 `side_hide_right_main` 正在播放，则 `rise` 结束后会继续播放 `main` 未完成的进度，不会从头重播。
 - 资源根目录通过 `config.toml` 中的 `side_hide_right_rise_root` 配置（默认 `SideHide_Right_Rise`）。
 
-### 4.8 SideHide_Left_Main 的 B_4 重播规则
+### 4.8 SideHide_Right_Main 的 B_1 重播规则
 
-- 针对 `assets/body/SideHide_Left_Main/Happy/B_4`：在该分段被轮播到时，额外有 `50%` 概率重播一次。
+- 针对 `assets/body/SideHide_Right_Main/Happy/B_1`：在该分段被轮播到时，额外有 `50%` 概率重播一次。
 - 重播判定仅对上述路径生效，其他 SideHide 分段仍按常规轮播推进。
 
 ### 4.3 Default 待机播放规则

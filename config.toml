@@ -44,6 +44,6 @@ touch_body_root = "Touch_Body"
 side_hide_right_main_root = "SideHide_Right_Main"
 side_hide_right_rise_root = "SideHide_Right_Rise"
 side_hide_right_trigger_pixel_x = 608
-side_hide_right_anchor_pixel_x = 577
+side_hide_right_anchor_pixel_x = 570
 side_hide_right_anchor_pixel_y = 583
 side_hide_right_trigger_tolerance_px = 2

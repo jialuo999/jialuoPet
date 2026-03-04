@@ -89,31 +89,33 @@ impl SideHideRightMainPlayer {
         self.current_loop_variant_index = Some(variant_index);
         self.side_hide_loop_files = self.side_hide_loop_variants[variant_index].clone();
         self.side_hide_loop_index = 0;
-        self.replay_current_loop_variant_once = Self::should_replay_left_main_happy_b4(
+        // 仅对 SideHide_Right_Main/Happy/B_1 生效：当前 B 段有 50% 概率重播一次。
+        self.replay_current_loop_variant_once = Self::should_replay_right_main_happy_b1(
             &self.side_hide_root,
             &self.side_hide_loop_files,
-        ) && rand::thread_rng().gen_bool(0.8); // 80% 概率重播一次当前变体，增加停留时长的随机性
+        ) && rand::thread_rng().gen_bool(0.5);
         self.playback_mode = SideHidePlaybackMode::Loop;
     }
 
-    fn should_replay_left_main_happy_b4(side_hide_root: &Path, files: &[PathBuf]) -> bool {
-        let is_left_main = side_hide_root
+    // 命中路径条件时才允许触发“重播一次当前循环分段”。
+    fn should_replay_right_main_happy_b1(side_hide_root: &Path, files: &[PathBuf]) -> bool {
+        let is_right_main = side_hide_root
             .components()
             .any(|component| {
                 component
                     .as_os_str()
                     .to_str()
-                    .map(|name| name.eq_ignore_ascii_case("SideHide_Left_Main"))
+                    .map(|name| name.eq_ignore_ascii_case("SideHide_Right_Main"))
                     .unwrap_or(false)
             });
 
-        if !is_left_main {
+        if !is_right_main {
             return false;
         }
 
         files.iter().any(|path| {
             let mut has_happy = false;
-            let mut has_b4 = false;
+            let mut has_b1 = false;
 
             for component in path.components() {
                 let Some(name) = component.as_os_str().to_str() else {
@@ -122,12 +124,12 @@ impl SideHideRightMainPlayer {
                 if name.eq_ignore_ascii_case("Happy") {
                     has_happy = true;
                 }
-                if name.eq_ignore_ascii_case("B_4") {
-                    has_b4 = true;
+                if name.eq_ignore_ascii_case("B_1") {
+                    has_b1 = true;
                 }
             }
 
-            has_happy && has_b4
+            has_happy && has_b1
         })
     }
 }
