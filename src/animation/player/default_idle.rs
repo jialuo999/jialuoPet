@@ -1,4 +1,5 @@
 impl DefaultIdlePlayer {
+    // 根据显示类型选择帧间隔：状态动画更紧凑，其它走全局轮播间隔。
     pub fn frame_interval(&self) -> u64 {
         match self.display_type {
             DisplayGraphType::StateOne | DisplayGraphType::StateTwo => 250,
@@ -25,6 +26,7 @@ use crate::animation::assets::{
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+// 当前正在显示的动画图谱类型，用于限制触发条件与帧间隔策略。
 enum DisplayGraphType {
     Default,
     Idel,
@@ -35,12 +37,15 @@ enum DisplayGraphType {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+// 模式切换动画方向：状态变差（Down）或恢复（Up）。
 enum SwitchDirection {
     Up,
     Down,
 }
 
 #[derive(Clone)]
+// 默认待机播放器的内部播放状态机。
+// 注意：此状态描述的是“序列阶段”，不是最终 PetMode。
 enum PlaybackState {
     Default,
     IdelStart { name: String },
@@ -73,21 +78,29 @@ enum PlaybackState {
 }
 
 pub(crate) struct DefaultIdlePlayer {
+    // 运行时配置（资源根目录、子目录约定等）。
     config: AnimationPathConfig,
+    // 当前生效的宠物模式（影响资源选择）。
     current_mode: PetMode,
+    // 默认待机资源池（按模式分组）。
     default_happy_variants: Vec<Vec<PathBuf>>,
     default_nomal_variants: Vec<Vec<PathBuf>>,
     default_poor_condition_variants: Vec<Vec<PathBuf>>,
     default_ill_variants: Vec<Vec<PathBuf>>,
+    // 当前模式下选中的默认帧序列。
     default_files: Vec<PathBuf>,
+    // 当前显示类型与播放状态。
     display_type: DisplayGraphType,
     playback_state: PlaybackState,
+    // 当前激活序列与索引。
     active_frames: Vec<PathBuf>,
     active_index: usize,
+    // 各类动画资源根目录缓存，避免频繁拼接路径。
     idel_root: PathBuf,
     state_root: PathBuf,
     switch_up_root: PathBuf,
     switch_down_root: PathBuf,
+    // 不能立即切换时，暂存一次待处理请求。
     pending_mode_switch: Option<(PetMode, PetMode)>,
 }
 
@@ -135,6 +148,7 @@ impl DefaultIdlePlayer {
     }
 
     fn refresh_selection(&mut self) {
+        // 按 current_mode 重新挑选默认待机帧。
         self.default_files = select_default_files_for_mode(
             self.current_mode,
             &self.default_happy_variants,
@@ -145,6 +159,7 @@ impl DefaultIdlePlayer {
     }
 
     fn set_frames(&mut self, frames: Vec<PathBuf>) {
+        // 切换序列时总是从首帧开始。
         self.active_frames = frames;
         self.active_index = 0;
     }
@@ -168,6 +183,7 @@ impl DefaultIdlePlayer {
     }
 
     fn can_switch_now(&self) -> bool {
+        // 仅允许在默认态或切换链路中继续切换，避免打断动作序列。
         matches!(
             self.display_type,
             DisplayGraphType::Default | DisplayGraphType::SwitchUp | DisplayGraphType::SwitchDown
@@ -175,6 +191,7 @@ impl DefaultIdlePlayer {
     }
 
     fn start_default(&mut self) {
+        // 回到稳定默认态，并尝试消费挂起的模式切换。
         self.display_type = DisplayGraphType::Default;
         self.playback_state = PlaybackState::Default;
         self.refresh_selection();
@@ -195,6 +212,7 @@ impl DefaultIdlePlayer {
     }
 
     fn should_end_loop(next_loop_times: u32, duration: u32) -> bool {
+        // loop 次数越高越容易结束，duration 作为“耐久度”上限。
         if next_loop_times == 0 {
             return false;
         }
@@ -205,6 +223,7 @@ impl DefaultIdlePlayer {
     }
 
     fn choose_idel_action_name(&self) -> Option<String> {
+        // 从 IDEL 动作目录中伪随机选择一个动作名。
         let names = collect_idel_action_names(&self.idel_root);
         if names.is_empty() {
             return None;
@@ -214,6 +233,7 @@ impl DefaultIdlePlayer {
     }
 
     fn start_idel_by_name(&mut self, name: String) -> bool {
+        // 优先走 A(起手) -> B(循环) -> C(收尾) 的完整链路。
         let start_frames = load_idel_segment(
             &self.idel_root,
             &name,
@@ -227,6 +247,7 @@ impl DefaultIdlePlayer {
             return true;
         }
 
+        // 若没有起手段，则退化为 Single 单段动作。
         let single_frames = load_idel_segment(
             &self.idel_root,
             &name,
@@ -250,6 +271,7 @@ impl DefaultIdlePlayer {
             return;
         }
 
+        // duration 越大，结束概率越低，形成不同停留时长。
         let duration = (loop_variants.len().max(1) as u32) * 2;
         let loop_frames = loop_variants[pseudo_random_index(loop_variants.len())].clone();
         if loop_frames.is_empty() {
@@ -398,6 +420,7 @@ impl DefaultIdlePlayer {
     }
 
     fn start_switch_step(&mut self, before: PetMode, after: PetMode) {
+        // 采用逐级切换：例如 Happy -> Ill 会依次经过中间模式。
         if before == after {
             self.start_default();
             return;
@@ -438,6 +461,7 @@ impl DefaultIdlePlayer {
     }
 
     fn on_active_sequence_finished(&mut self) {
+        // 使用快照避免 match 分支中修改 self 时发生借用冲突。
         let snapshot = self.playback_state.clone();
 
         match snapshot {
@@ -472,6 +496,8 @@ impl DefaultIdlePlayer {
             } => {
                 let next_loop_times = loop_times.saturating_add(1);
                 if Self::should_end_loop(next_loop_times, duration) {
+                    // StateONE 结束后，按概率进入 StateTWO 或直接收尾。
+                    // count_nomal 越大，进入 StateTWO 的概率越低。
                     let upper = 1_u32.saturating_add(count_nomal);
                     let branch = rand::thread_rng().gen_range(0..=upper);
                     if branch == 0 {
@@ -509,6 +535,7 @@ impl DefaultIdlePlayer {
                 after,
                 direction,
             } => {
+                // 单步切换结束后推进到下一个中间模式，直到抵达 after。
                 let before_rank = Self::mode_rank(before);
                 let next_before = match direction {
                     SwitchDirection::Down => Self::mode_from_rank(before_rank + 1),
@@ -525,6 +552,7 @@ impl DefaultIdlePlayer {
     }
 
     pub(crate) fn trigger_idel(&mut self) -> bool {
+        // 仅允许从默认态触发，避免打断状态机关键序列。
         if self.display_type != DisplayGraphType::Default {
             return false;
         }
@@ -546,6 +574,7 @@ impl DefaultIdlePlayer {
     }
 
     pub(crate) fn request_mode_switch(&mut self, before: PetMode, after: PetMode) {
+        // 先更新目标模式，确保后续资源选择与最终目标一致。
         self.current_mode = after;
 
         if before == after {
