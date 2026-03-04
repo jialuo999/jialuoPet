@@ -22,6 +22,7 @@ use std::time::Duration;
 use animation::{
     is_shutdown_animation_finished, load_carousel_images, request_shutdown_animation,
     request_animation_config_reload,
+    request_hover_animation_end, request_hover_animation_start,
     request_touch_body_animation, request_touch_head_animation,
 };
 use config::{
@@ -29,7 +30,8 @@ use config::{
 };
 use drag::setup_long_press_drag;
 use interaction::{
-    setup_context_menu, setup_image_input_region, setup_input_probe, setup_touch_click_regions,
+    setup_context_menu, setup_hover_regions, setup_image_input_region, setup_input_probe,
+    setup_touch_click_regions,
 };
 use settings::{SettingsPanel, SettingsStore};
 use stats::PetStatsService;
@@ -188,6 +190,20 @@ fn build_ui(app: &Application) {
         }),
         Rc::new(|| {
             request_touch_body_animation();
+        }),
+        {
+            let pending_action = pending_action.clone();
+            Rc::new(move || *pending_action.borrow() != PendingSystemAction::None)
+        },
+    );
+
+    setup_hover_regions(
+        &image,
+        Rc::new(|| {
+            request_hover_animation_start();
+        }),
+        Rc::new(|| {
+            request_hover_animation_end();
         }),
         {
             let pending_action = pending_action.clone();

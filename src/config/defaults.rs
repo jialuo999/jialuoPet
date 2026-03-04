@@ -24,6 +24,12 @@ pub const PINCH_ROOT: &str = "Pinch";
 pub const SHUTDOWN_ROOT: &str = "Shutdown";
 pub const TOUCH_HEAD_ROOT: &str = "Touch_Head";
 pub const TOUCH_BODY_ROOT: &str = "Touch_Body";
+pub const SIDE_HIDE_RIGHT_MAIN_ROOT: &str = "SideHide_Right_Main";
+pub const SIDE_HIDE_RIGHT_RISE_ROOT: &str = "SideHide_Right_Rise";
+pub const SIDE_HIDE_RIGHT_TRIGGER_PIXEL_X: i32 = 608;
+pub const SIDE_HIDE_RIGHT_ANCHOR_PIXEL_X: i32 = 608;
+pub const SIDE_HIDE_RIGHT_ANCHOR_PIXEL_Y: i32 = 583;
+pub const SIDE_HIDE_RIGHT_TRIGGER_TOLERANCE_PX: i32 = 2;
 
 // ===== 面板调试默认值 =====
 pub const PANEL_BASIC_STAT_MAX: u32 = 100;

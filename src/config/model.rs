@@ -9,7 +9,10 @@ use super::defaults::{
 	PANEL_DEFAULT_LEVEL, PANEL_DEFAULT_MOOD, PANEL_DEFAULT_SATIETY, PANEL_DEFAULT_STAMINA,
 	PANEL_DEFAULT_THIRST, PANEL_EXPERIENCE_MAX, PINCH_ROOT,
 	RAISE_DYNAMIC_ROOT, RAISE_STATIC_ROOT, SHUTDOWN_ROOT, STARTUP_ROOT, TOUCH_BODY_ROOT,
-	TOUCH_HEAD_ROOT,
+	TOUCH_HEAD_ROOT, SIDE_HIDE_RIGHT_MAIN_ROOT, SIDE_HIDE_RIGHT_TRIGGER_PIXEL_X,
+	SIDE_HIDE_RIGHT_RISE_ROOT,
+	SIDE_HIDE_RIGHT_ANCHOR_PIXEL_X,
+	SIDE_HIDE_RIGHT_ANCHOR_PIXEL_Y, SIDE_HIDE_RIGHT_TRIGGER_TOLERANCE_PX,
 };
 
 // ===== 面板配置结构 =====
@@ -141,6 +144,12 @@ pub struct AnimationPathConfig {
 	pub shutdown_root: String,
 	pub touch_head_root: String,
 	pub touch_body_root: String,
+	pub side_hide_right_main_root: String,
+	pub side_hide_right_rise_root: String,
+	pub side_hide_right_trigger_pixel_x: i32,
+	pub side_hide_right_anchor_pixel_x: i32,
+	pub side_hide_right_anchor_pixel_y: i32,
+	pub side_hide_right_trigger_tolerance_px: i32,
 }
 
 impl Default for AnimationPathConfig {
@@ -165,6 +174,12 @@ impl Default for AnimationPathConfig {
 			shutdown_root: SHUTDOWN_ROOT.to_string(),
 			touch_head_root: TOUCH_HEAD_ROOT.to_string(),
 			touch_body_root: TOUCH_BODY_ROOT.to_string(),
+			side_hide_right_main_root: SIDE_HIDE_RIGHT_MAIN_ROOT.to_string(),
+			side_hide_right_rise_root: SIDE_HIDE_RIGHT_RISE_ROOT.to_string(),
+			side_hide_right_trigger_pixel_x: SIDE_HIDE_RIGHT_TRIGGER_PIXEL_X,
+			side_hide_right_anchor_pixel_x: SIDE_HIDE_RIGHT_ANCHOR_PIXEL_X,
+			side_hide_right_anchor_pixel_y: SIDE_HIDE_RIGHT_ANCHOR_PIXEL_Y,
+			side_hide_right_trigger_tolerance_px: SIDE_HIDE_RIGHT_TRIGGER_TOLERANCE_PX,
 		}
 	}
 }
@@ -198,6 +213,13 @@ impl AnimationPathConfig {
 		if self.touch_body_root.trim().is_empty() {
 			self.touch_body_root = defaults.touch_body_root;
 		}
+		if self.side_hide_right_main_root.trim().is_empty() {
+			self.side_hide_right_main_root = defaults.side_hide_right_main_root;
+		}
+		if self.side_hide_right_rise_root.trim().is_empty() {
+			self.side_hide_right_rise_root = defaults.side_hide_right_rise_root;
+		}
+		self.side_hide_right_trigger_tolerance_px = self.side_hide_right_trigger_tolerance_px.max(0);
 		if self.default_nomal_idle_root.trim().is_empty() {
 			self.default_nomal_idle_root = defaults.default_nomal_idle_root;
 		}
@@ -251,6 +273,12 @@ pub(crate) struct AnimationPathConfigPartial {
 	shutdown_root: Option<String>,
 	touch_head_root: Option<String>,
 	touch_body_root: Option<String>,
+	side_hide_right_main_root: Option<String>,
+	side_hide_right_rise_root: Option<String>,
+	side_hide_right_trigger_pixel_x: Option<i32>,
+	side_hide_right_anchor_pixel_x: Option<i32>,
+	side_hide_right_anchor_pixel_y: Option<i32>,
+	side_hide_right_trigger_tolerance_px: Option<i32>,
 }
 
 impl AnimationPathConfigPartial {
@@ -303,6 +331,24 @@ impl AnimationPathConfigPartial {
 		}
 		if let Some(value) = self.touch_body_root {
 			base.touch_body_root = value;
+		}
+		if let Some(value) = self.side_hide_right_main_root {
+			base.side_hide_right_main_root = value;
+		}
+		if let Some(value) = self.side_hide_right_rise_root {
+			base.side_hide_right_rise_root = value;
+		}
+		if let Some(value) = self.side_hide_right_trigger_pixel_x {
+			base.side_hide_right_trigger_pixel_x = value;
+		}
+		if let Some(value) = self.side_hide_right_anchor_pixel_x {
+			base.side_hide_right_anchor_pixel_x = value;
+		}
+		if let Some(value) = self.side_hide_right_anchor_pixel_y {
+			base.side_hide_right_anchor_pixel_y = value;
+		}
+		if let Some(value) = self.side_hide_right_trigger_tolerance_px {
+			base.side_hide_right_trigger_tolerance_px = value;
 		}
 		base
 	}

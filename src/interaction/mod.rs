@@ -8,4 +8,4 @@ mod touch_regions;
 pub use context_menu::setup_context_menu;
 pub use input_probe::setup_input_probe;
 pub use input_region::setup_image_input_region;
-pub use touch_regions::setup_touch_click_regions;
+pub use touch_regions::{setup_hover_regions, setup_touch_click_regions};

@@ -19,11 +19,16 @@ pub(crate) const TOUCH_ANIM_IDLE: u8 = 0;
 pub(crate) const TOUCH_ANIM_HEAD_REQUESTED: u8 = 1;
 pub(crate) const TOUCH_ANIM_BODY_REQUESTED: u8 = 2;
 
+pub(crate) const HOVER_ANIM_IDLE: u8 = 0;
+pub(crate) const HOVER_ANIM_START_REQUESTED: u8 = 1;
+pub(crate) const HOVER_ANIM_END_REQUESTED: u8 = 2;
+
 // ===== 全局请求状态（原子变量） =====
 static DRAG_RAISE_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(DRAG_ANIM_IDLE);
 static PINCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(PINCH_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(SHUTDOWN_ANIM_IDLE);
 static TOUCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(TOUCH_ANIM_IDLE);
+static HOVER_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(HOVER_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_FINISHED: AtomicBool = AtomicBool::new(false);
 static ANIMATION_CONFIG_RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -33,6 +38,7 @@ pub(crate) struct AnimationRequests {
     pub(crate) pinch: u8,
     pub(crate) shutdown: u8,
     pub(crate) touch: u8,
+    pub(crate) hover: u8,
 }
 
 // ===== 请求写入接口 =====
@@ -69,6 +75,14 @@ pub fn request_touch_body_animation() {
     TOUCH_ANIMATION_PHASE.store(TOUCH_ANIM_BODY_REQUESTED, Ordering::Relaxed);
 }
 
+pub fn request_hover_animation_start() {
+    HOVER_ANIMATION_PHASE.store(HOVER_ANIM_START_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_hover_animation_end() {
+    HOVER_ANIMATION_PHASE.store(HOVER_ANIM_END_REQUESTED, Ordering::Relaxed);
+}
+
 pub fn request_animation_config_reload() {
     ANIMATION_CONFIG_RELOAD_REQUESTED.store(true, Ordering::Relaxed);
 }
@@ -88,6 +102,7 @@ pub(crate) fn consume_requests() -> AnimationRequests {
         pinch: PINCH_ANIMATION_PHASE.swap(PINCH_ANIM_IDLE, Ordering::Relaxed),
         shutdown: SHUTDOWN_ANIMATION_PHASE.swap(SHUTDOWN_ANIM_IDLE, Ordering::Relaxed),
         touch: TOUCH_ANIMATION_PHASE.swap(TOUCH_ANIM_IDLE, Ordering::Relaxed),
+        hover: HOVER_ANIMATION_PHASE.swap(HOVER_ANIM_IDLE, Ordering::Relaxed),
     }
 }
 

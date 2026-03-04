@@ -2,6 +2,7 @@
 mod default_idle;
 mod drag_raise;
 mod pinch;
+mod side_hide_right_main;
 mod shutdown;
 mod startup;
 mod touch;
@@ -15,6 +16,7 @@ use crate::stats::PetMode;
 pub(crate) use default_idle::DefaultIdlePlayer;
 pub(crate) use drag_raise::DragRaisePlayer;
 pub(crate) use pinch::PinchPlayer;
+pub(crate) use side_hide_right_main::SideHideRightMainPlayer;
 pub(crate) use shutdown::ShutdownPlayer;
 pub(crate) use startup::StartupPlayer;
 pub(crate) use touch::TouchPlayer;

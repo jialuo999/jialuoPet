@@ -4,6 +4,7 @@ mod default_idle;
 mod drag_raise;
 mod idel_state;
 mod pinch;
+mod side_hide;
 mod shutdown;
 mod startup;
 mod touch;
@@ -25,6 +26,9 @@ pub(crate) use idel_state::{
 };
 pub(crate) use pinch::{
     collect_pinch_end_files, collect_pinch_loop_variants, collect_pinch_start_files,
+};
+pub(crate) use side_hide::{
+    collect_side_hide_end_files, collect_side_hide_loop_variants, collect_side_hide_start_files,
 };
 pub(crate) use shutdown::collect_shutdown_variants;
 pub(crate) use startup::choose_startup_animation_files;

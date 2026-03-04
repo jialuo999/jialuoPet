@@ -1,6 +1,6 @@
 // ===== 依赖导入 =====
 use gtk4::prelude::*;
-use gtk4::{GestureClick, Image};
+use gtk4::{EventControllerMotion, GestureClick, Image};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
@@ -200,4 +200,37 @@ pub fn setup_touch_click_regions(
     }
 
     image.add_controller(click);
+}
+
+pub fn setup_hover_regions(
+    image: &Image,
+    on_hover_entered: Rc<dyn Fn()>,
+    on_hover_left: Rc<dyn Fn()>,
+    is_shutting_down: Rc<dyn Fn() -> bool>,
+) {
+    let motion = EventControllerMotion::new();
+
+    {
+        let on_hover_entered = on_hover_entered.clone();
+        let is_shutting_down = is_shutting_down.clone();
+        motion.connect_enter(move |_, _, _| {
+            if is_shutting_down() {
+                return;
+            }
+            on_hover_entered();
+        });
+    }
+
+    {
+        let on_hover_left = on_hover_left.clone();
+        let is_shutting_down = is_shutting_down.clone();
+        motion.connect_leave(move |_| {
+            if is_shutting_down() {
+                return;
+            }
+            on_hover_left();
+        });
+    }
+
+    image.add_controller(motion);
 }

@@ -89,9 +89,30 @@
 3. `pinch`
 4. `touch`
 5. `startup`
-6. `default_idle`
+6. `side_hide_right_main`
+7. `default_idle`
 
 说明：`startup` 仅初始化时活跃，播完后自动回落到 `default_idle`。当前无 `IDEL`/`State` 分支。
+
+### 4.6 右边界 SideHide（SideHide_Right_Main）
+
+- 触发条件：仅按 `side_hide_right_trigger_pixel_x`（图片像素坐标映射后）判断是否靠近屏幕右边界。
+- 进入后会将窗口贴靠右边界，并以 `side_hide_right_anchor_pixel_x / side_hide_right_anchor_pixel_y` 作为显示对齐参考点。
+- 播放链路：`A -> B_1/B_2/B_3/B_4 轮播 -> ... -> C(被打断时)`。
+- B 段按目录排序轮播（如 B_1 -> B_2 -> B_3 -> B_4 -> B_1 ...）；若某模式缺少部分编号，则在现有目录中循环。
+- B 段不再使用时长限制；每个分段播完即切换到下一个分段。
+- 在 `side_hide_right_main` 活跃期间，不触发 `IDEL/State`；收到 `Pinch/TouchHead/TouchBody` 请求时会先播 `C` 段收尾。
+
+### 4.7 悬浮 SideHide（SideHide_Right_Rise）
+
+- 鼠标进入人物区域时触发 `side_hide_right_rise`，播放链路遵循目录命名：`A -> B 循环`。
+- 鼠标离开人物区域时发送结束请求，播放 `C` 段收尾。
+- 资源根目录通过 `config.toml` 中的 `side_hide_right_rise_root` 配置（默认 `SideHide_Right_Rise`）。
+
+### 4.8 SideHide_Left_Main 的 B_4 重播规则
+
+- 针对 `assets/body/SideHide_Left_Main/Happy/B_4`：在该分段被轮播到时，额外有 `50%` 概率重播一次。
+- 重播判定仅对上述路径生效，其他 SideHide 分段仍按常规轮播推进。
 
 ### 4.3 Default 待机播放规则
 

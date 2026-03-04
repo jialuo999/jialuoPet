@@ -38,3 +38,12 @@ pinch_root = "Pinch"
 shutdown_root = "Shutdown"
 touch_head_root = "Touch_Head"
 touch_body_root = "Touch_Body"
+
+# 右边界触发隐藏主动画（像素坐标均为原图坐标，会自动映射到当前显示尺寸）
+# 触发判定仅使用 trigger 的横坐标 X（靠右边界）
+side_hide_right_main_root = "SideHide_Right_Main"
+side_hide_right_rise_root = "SideHide_Right_Rise"
+side_hide_right_trigger_pixel_x = 608
+side_hide_right_anchor_pixel_x = 577
+side_hide_right_anchor_pixel_y = 583
+side_hide_right_trigger_tolerance_px = 2
