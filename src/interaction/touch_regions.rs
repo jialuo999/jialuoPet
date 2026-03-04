@@ -1,9 +1,10 @@
 // ===== 依赖导入 =====
+use glib::timeout_add_local;
 use gtk4::prelude::*;
-use gtk4::{EventControllerMotion, GestureClick, Image};
+use gtk4::{ApplicationWindow, EventControllerMotion, GestureClick, Image, PropagationPhase};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::config::DRAG_LONG_PRESS_MS;
 use crate::stats::{InteractType, PetMode, PetStatsService};
@@ -203,20 +204,46 @@ pub fn setup_touch_click_regions(
 }
 
 pub fn setup_hover_regions(
-    image: &Image,
+    window: &ApplicationWindow,
     on_hover_entered: Rc<dyn Fn()>,
     on_hover_left: Rc<dyn Fn()>,
     is_shutting_down: Rc<dyn Fn() -> bool>,
 ) {
+    // 在 niri + layer-shell 环境中，挂在 Image 上的 enter/leave 可能丢失。
+    // 这里改为挂在 Window 上，并使用 motion 作为兜底信号。
     let motion = EventControllerMotion::new();
+    motion.set_propagation_phase(PropagationPhase::Capture);
+    let is_hovering = Rc::new(RefCell::new(false));
 
     {
         let on_hover_entered = on_hover_entered.clone();
         let is_shutting_down = is_shutting_down.clone();
+        let is_hovering = is_hovering.clone();
         motion.connect_enter(move |_, _, _| {
             if is_shutting_down() {
                 return;
             }
+            if *is_hovering.borrow() {
+                return;
+            }
+            *is_hovering.borrow_mut() = true;
+            on_hover_entered();
+        });
+    }
+
+    {
+        let on_hover_entered = on_hover_entered.clone();
+        let is_shutting_down = is_shutting_down.clone();
+        let is_hovering = is_hovering.clone();
+        motion.connect_motion(move |_, _, _| {
+            if is_shutting_down() {
+                return;
+            }
+            // 兜底：若 enter 事件未到达，但窗口已收到 motion，则视为“已悬浮”。
+            if *is_hovering.borrow() {
+                return;
+            }
+            *is_hovering.borrow_mut() = true;
             on_hover_entered();
         });
     }
@@ -224,13 +251,57 @@ pub fn setup_hover_regions(
     {
         let on_hover_left = on_hover_left.clone();
         let is_shutting_down = is_shutting_down.clone();
+        let is_hovering = is_hovering.clone();
         motion.connect_leave(move |_| {
             if is_shutting_down() {
                 return;
             }
+            if !*is_hovering.borrow() {
+                return;
+            }
+            *is_hovering.borrow_mut() = false;
             on_hover_left();
         });
     }
 
-    image.add_controller(motion);
+    window.add_controller(motion);
+
+    // 二级兜底（niri 场景）：部分 compositor 下 enter/leave 仍可能不稳定，
+    // 通过周期性查询“当前指针所在 surface”来补发 enter/leave。
+    let window_weak = window.downgrade();
+    let is_hovering_for_poll = is_hovering.clone();
+    let on_hover_entered_for_poll = on_hover_entered.clone();
+    let on_hover_left_for_poll = on_hover_left.clone();
+    let is_shutting_down_for_poll = is_shutting_down.clone();
+    timeout_add_local(Duration::from_millis(120), move || {
+        if is_shutting_down_for_poll() {
+            return glib::ControlFlow::Continue;
+        }
+
+        let Some(window) = window_weak.upgrade() else {
+            return glib::ControlFlow::Break;
+        };
+        let Some(window_surface) = window.surface() else {
+            return glib::ControlFlow::Continue;
+        };
+
+        let is_pointer_on_this_surface = gdk4::Display::default()
+            .and_then(|display| display.default_seat())
+            .and_then(|seat| seat.pointer())
+            .map(|pointer| pointer.surface_at_position())
+            .and_then(|(surface, _, _)| surface)
+            .map(|surface| surface == window_surface)
+            .unwrap_or(false);
+
+        let mut hovering = is_hovering_for_poll.borrow_mut();
+        if is_pointer_on_this_surface && !*hovering {
+            *hovering = true;
+            on_hover_entered_for_poll();
+        } else if !is_pointer_on_this_surface && *hovering {
+            *hovering = false;
+            on_hover_left_for_poll();
+        }
+
+        glib::ControlFlow::Continue
+    });
 }

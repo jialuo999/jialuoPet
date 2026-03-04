@@ -92,7 +92,7 @@ impl SideHideRightMainPlayer {
         self.replay_current_loop_variant_once = Self::should_replay_left_main_happy_b4(
             &self.side_hide_root,
             &self.side_hide_loop_files,
-        ) && rand::thread_rng().gen_bool(0.5);
+        ) && rand::thread_rng().gen_bool(0.8); // 80% 概率重播一次当前变体，增加停留时长的随机性
         self.playback_mode = SideHidePlaybackMode::Loop;
     }
 

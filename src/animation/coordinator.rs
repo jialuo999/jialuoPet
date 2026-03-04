@@ -248,6 +248,12 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     }
 
     if players.side_hide_right_main.is_active() {
+        if reqs.hover == HOVER_ANIM_START_REQUESTED {
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.start();
+            return;
+        }
+
         let should_interrupt_to_end = matches!(
             reqs.pinch,
             PINCH_ANIM_START_REQUESTED | PINCH_ANIM_LOOP_REQUESTED | PINCH_ANIM_END_REQUESTED

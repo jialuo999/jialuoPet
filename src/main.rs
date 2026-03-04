@@ -197,8 +197,9 @@ fn build_ui(app: &Application) {
         },
     );
 
+    // niri 环境下悬浮事件走 window 级监听更稳定。
     setup_hover_regions(
-        &image,
+        &window,
         Rc::new(|| {
             request_hover_animation_start();
         }),
