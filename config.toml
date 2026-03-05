@@ -7,7 +7,7 @@ experience_max = 100
 default_stamina = 80
 default_satiety = 80
 default_thirst = 80
-default_mood = 80
+default_mood = 70
 default_health = 80
 default_affinity = 80
 default_experience = 80
@@ -47,3 +47,11 @@ side_hide_right_trigger_pixel_x = 608
 side_hide_right_anchor_pixel_x = 570
 side_hide_right_anchor_pixel_y = 583
 side_hide_right_trigger_tolerance_px = 2
+
+# 左边界触发隐藏主动画（判定使用 trigger 的横坐标 X，靠左边界）
+side_hide_left_main_root = "SideHide_Left_Main"
+side_hide_left_rise_root = "SideHide_Left_Rise"
+side_hide_left_trigger_pixel_x = 470
+side_hide_left_anchor_pixel_x = 470
+side_hide_left_anchor_pixel_y = 583
+side_hide_left_trigger_tolerance_px = 2

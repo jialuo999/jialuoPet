@@ -13,6 +13,9 @@ use super::defaults::{
 	SIDE_HIDE_RIGHT_RISE_ROOT,
 	SIDE_HIDE_RIGHT_ANCHOR_PIXEL_X,
 	SIDE_HIDE_RIGHT_ANCHOR_PIXEL_Y, SIDE_HIDE_RIGHT_TRIGGER_TOLERANCE_PX,
+	SIDE_HIDE_LEFT_MAIN_ROOT, SIDE_HIDE_LEFT_RISE_ROOT,
+	SIDE_HIDE_LEFT_TRIGGER_PIXEL_X, SIDE_HIDE_LEFT_ANCHOR_PIXEL_X,
+	SIDE_HIDE_LEFT_ANCHOR_PIXEL_Y, SIDE_HIDE_LEFT_TRIGGER_TOLERANCE_PX,
 };
 
 // ===== 面板配置结构 =====
@@ -150,6 +153,12 @@ pub struct AnimationPathConfig {
 	pub side_hide_right_anchor_pixel_x: i32,
 	pub side_hide_right_anchor_pixel_y: i32,
 	pub side_hide_right_trigger_tolerance_px: i32,
+	pub side_hide_left_main_root: String,
+	pub side_hide_left_rise_root: String,
+	pub side_hide_left_trigger_pixel_x: i32,
+	pub side_hide_left_anchor_pixel_x: i32,
+	pub side_hide_left_anchor_pixel_y: i32,
+	pub side_hide_left_trigger_tolerance_px: i32,
 }
 
 impl Default for AnimationPathConfig {
@@ -180,6 +189,12 @@ impl Default for AnimationPathConfig {
 			side_hide_right_anchor_pixel_x: SIDE_HIDE_RIGHT_ANCHOR_PIXEL_X,
 			side_hide_right_anchor_pixel_y: SIDE_HIDE_RIGHT_ANCHOR_PIXEL_Y,
 			side_hide_right_trigger_tolerance_px: SIDE_HIDE_RIGHT_TRIGGER_TOLERANCE_PX,
+			side_hide_left_main_root: SIDE_HIDE_LEFT_MAIN_ROOT.to_string(),
+			side_hide_left_rise_root: SIDE_HIDE_LEFT_RISE_ROOT.to_string(),
+			side_hide_left_trigger_pixel_x: SIDE_HIDE_LEFT_TRIGGER_PIXEL_X,
+			side_hide_left_anchor_pixel_x: SIDE_HIDE_LEFT_ANCHOR_PIXEL_X,
+			side_hide_left_anchor_pixel_y: SIDE_HIDE_LEFT_ANCHOR_PIXEL_Y,
+			side_hide_left_trigger_tolerance_px: SIDE_HIDE_LEFT_TRIGGER_TOLERANCE_PX,
 		}
 	}
 }
@@ -220,6 +235,13 @@ impl AnimationPathConfig {
 			self.side_hide_right_rise_root = defaults.side_hide_right_rise_root;
 		}
 		self.side_hide_right_trigger_tolerance_px = self.side_hide_right_trigger_tolerance_px.max(0);
+		if self.side_hide_left_main_root.trim().is_empty() {
+			self.side_hide_left_main_root = defaults.side_hide_left_main_root;
+		}
+		if self.side_hide_left_rise_root.trim().is_empty() {
+			self.side_hide_left_rise_root = defaults.side_hide_left_rise_root;
+		}
+		self.side_hide_left_trigger_tolerance_px = self.side_hide_left_trigger_tolerance_px.max(0);
 		if self.default_nomal_idle_root.trim().is_empty() {
 			self.default_nomal_idle_root = defaults.default_nomal_idle_root;
 		}
@@ -279,6 +301,12 @@ pub(crate) struct AnimationPathConfigPartial {
 	side_hide_right_anchor_pixel_x: Option<i32>,
 	side_hide_right_anchor_pixel_y: Option<i32>,
 	side_hide_right_trigger_tolerance_px: Option<i32>,
+	side_hide_left_main_root: Option<String>,
+	side_hide_left_rise_root: Option<String>,
+	side_hide_left_trigger_pixel_x: Option<i32>,
+	side_hide_left_anchor_pixel_x: Option<i32>,
+	side_hide_left_anchor_pixel_y: Option<i32>,
+	side_hide_left_trigger_tolerance_px: Option<i32>,
 }
 
 impl AnimationPathConfigPartial {
@@ -349,6 +377,24 @@ impl AnimationPathConfigPartial {
 		}
 		if let Some(value) = self.side_hide_right_trigger_tolerance_px {
 			base.side_hide_right_trigger_tolerance_px = value;
+		}
+		if let Some(value) = self.side_hide_left_main_root {
+			base.side_hide_left_main_root = value;
+		}
+		if let Some(value) = self.side_hide_left_rise_root {
+			base.side_hide_left_rise_root = value;
+		}
+		if let Some(value) = self.side_hide_left_trigger_pixel_x {
+			base.side_hide_left_trigger_pixel_x = value;
+		}
+		if let Some(value) = self.side_hide_left_anchor_pixel_x {
+			base.side_hide_left_anchor_pixel_x = value;
+		}
+		if let Some(value) = self.side_hide_left_anchor_pixel_y {
+			base.side_hide_left_anchor_pixel_y = value;
+		}
+		if let Some(value) = self.side_hide_left_trigger_tolerance_px {
+			base.side_hide_left_trigger_tolerance_px = value;
 		}
 		base
 	}

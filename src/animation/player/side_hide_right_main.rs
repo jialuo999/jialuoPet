@@ -89,47 +89,64 @@ impl SideHideRightMainPlayer {
         self.current_loop_variant_index = Some(variant_index);
         self.side_hide_loop_files = self.side_hide_loop_variants[variant_index].clone();
         self.side_hide_loop_index = 0;
-        // 仅对 SideHide_Right_Main/Happy/B_1 生效：当前 B 段有 50% 概率重播一次。
-        self.replay_current_loop_variant_once = Self::should_replay_right_main_happy_b1(
+        self.replay_current_loop_variant_once = Self::replay_probability_for_current_loop_segment(
             &self.side_hide_root,
             &self.side_hide_loop_files,
-        ) && rand::thread_rng().gen_bool(0.5);
+        )
+        .map(|probability| rand::thread_rng().gen_bool(probability))
+        .unwrap_or(false);
         self.playback_mode = SideHidePlaybackMode::Loop;
     }
 
     // 命中路径条件时才允许触发“重播一次当前循环分段”。
-    fn should_replay_right_main_happy_b1(side_hide_root: &Path, files: &[PathBuf]) -> bool {
-        let is_right_main = side_hide_root
-            .components()
-            .any(|component| {
-                component
-                    .as_os_str()
-                    .to_str()
-                    .map(|name| name.eq_ignore_ascii_case("SideHide_Right_Main"))
-                    .unwrap_or(false)
-            });
-
-        if !is_right_main {
-            return false;
+    // - SideHide_Right_Main/Happy/B_1: 50%
+    // - SideHide_Left_Main/Happy/B_3: 60%
+    fn replay_probability_for_current_loop_segment(side_hide_root: &Path, files: &[PathBuf]) -> Option<f64> {
+        let is_right_main = Self::root_contains(side_hide_root, "SideHide_Right_Main");
+        if is_right_main && Self::matches_loop_segment(files, "Happy", &["B_1", "B1"]) {
+            return Some(0.5);
         }
 
+        let is_left_main = Self::root_contains(side_hide_root, "SideHide_Left_Main");
+        // 左侧主隐藏动画中，Happy 的 B_3 循环段有 60% 概率重播一次。
+        if is_left_main && Self::matches_loop_segment(files, "Happy", &["B_3", "B3"]) {
+            return Some(0.6);
+        }
+
+        None
+    }
+
+    fn root_contains(side_hide_root: &Path, needle: &str) -> bool {
+        side_hide_root.components().any(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .map(|name| name.eq_ignore_ascii_case(needle))
+                .unwrap_or(false)
+        })
+    }
+
+    fn matches_loop_segment(files: &[PathBuf], mode_name: &str, segment_names: &[&str]) -> bool {
         files.iter().any(|path| {
-            let mut has_happy = false;
-            let mut has_b1 = false;
+            let mut has_mode = false;
+            let mut has_segment = false;
 
             for component in path.components() {
                 let Some(name) = component.as_os_str().to_str() else {
                     continue;
                 };
-                if name.eq_ignore_ascii_case("Happy") {
-                    has_happy = true;
+                if name.eq_ignore_ascii_case(mode_name) {
+                    has_mode = true;
                 }
-                if name.eq_ignore_ascii_case("B_1") {
-                    has_b1 = true;
+                if segment_names
+                    .iter()
+                    .any(|segment| name.eq_ignore_ascii_case(segment))
+                {
+                    has_segment = true;
                 }
             }
 
-            has_happy && has_b1
+            has_mode && has_segment
         })
     }
 }

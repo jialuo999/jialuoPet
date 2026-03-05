@@ -30,6 +30,12 @@ pub const SIDE_HIDE_RIGHT_TRIGGER_PIXEL_X: i32 = 608;
 pub const SIDE_HIDE_RIGHT_ANCHOR_PIXEL_X: i32 = 608;
 pub const SIDE_HIDE_RIGHT_ANCHOR_PIXEL_Y: i32 = 583;
 pub const SIDE_HIDE_RIGHT_TRIGGER_TOLERANCE_PX: i32 = 2;
+pub const SIDE_HIDE_LEFT_MAIN_ROOT: &str = "SideHide_Left_Main";
+pub const SIDE_HIDE_LEFT_RISE_ROOT: &str = "SideHide_Left_Rise";
+pub const SIDE_HIDE_LEFT_TRIGGER_PIXEL_X: i32 = 470;
+pub const SIDE_HIDE_LEFT_ANCHOR_PIXEL_X: i32 = 470;
+pub const SIDE_HIDE_LEFT_ANCHOR_PIXEL_Y: i32 = 583;
+pub const SIDE_HIDE_LEFT_TRIGGER_TOLERANCE_PX: i32 = 2;
 
 // ===== 面板调试默认值 =====
 pub const PANEL_BASIC_STAT_MAX: u32 = 100;
