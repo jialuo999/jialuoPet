@@ -7,18 +7,25 @@ use super::common::{
     collect_png_variant_dirs_recursive, dir_name_matches_mode, pseudo_random_index,
 };
 
+/// 空闲/状态动画的分段类型
 #[derive(Clone, Copy)]
 pub(crate) enum IdelStateSegment {
+    /// 起始段
     A,
+    /// 循环段
     B,
+    /// 结束段
     C,
+    /// 单段（无分段）
     Single,
 }
 
+/// 返回当前模式及其降级候选（优先当前，其次 Nomal/Happy）
 fn mode_candidates(mode: PetMode) -> [PetMode; 3] {
     [mode, PetMode::Nomal, PetMode::Happy]
 }
 
+/// 路径中是否包含指定模式的关键字（如 Happy/Nomal/PoorCondition/Ill）
 fn mode_keyword_in_path(path: &Path, mode: PetMode) -> bool {
     path.components().any(|component| {
         component
@@ -29,6 +36,7 @@ fn mode_keyword_in_path(path: &Path, mode: PetMode) -> bool {
     })
 }
 
+/// 路径中是否包含任意模式关键字
 fn path_has_any_mode_keyword(path: &Path) -> bool {
     path.components().any(|component| {
         component
@@ -45,10 +53,12 @@ fn path_has_any_mode_keyword(path: &Path) -> bool {
     })
 }
 
+/// 路径要么明确匹配当前模式，要么为“无模式限定”
 fn path_matches_mode_or_agnostic(path: &Path, mode: PetMode) -> bool {
     mode_keyword_in_path(path, mode) || !path_has_any_mode_keyword(path)
 }
 
+/// 各分段对应的文件名前缀（如 a_*, b_*, c_*）
 fn segment_prefix(segment: IdelStateSegment) -> Option<&'static str> {
     match segment {
         IdelStateSegment::A => Some("a"),

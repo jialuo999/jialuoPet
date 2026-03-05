@@ -42,6 +42,8 @@ struct PlayerSet {
     side_hide_right_anchor_pixel_x: i32,
     side_hide_right_anchor_pixel_y: i32,
     side_hide_right_trigger_tolerance_px: i32,
+    // hover 当前态（由输入层 enter/leave 请求同步），用于决定是否可触发 Right_Rise
+    hover_active: bool,
     default_idle: DefaultIdlePlayer,
 }
 
@@ -74,6 +76,7 @@ fn map_source_point_to_widget(
     source_x: i32,
     source_y: i32,
 ) -> (i32, i32) {
+    // 将素材像素坐标映射为当前 widget 坐标（支持窗口缩放后命中判断）
     let alloc = image.allocation();
     let widget_w = alloc.width().max(1) as f64;
     let widget_h = alloc.height().max(1) as f64;
@@ -91,6 +94,7 @@ fn map_source_point_to_widget(
     (mapped_x.max(0), mapped_y.max(0))
 }
 
+// 当宠物靠近右屏边界时，触发 SideHide_Right_Main 并将窗口按锚点对齐到边缘
 fn maybe_trigger_side_hide_right_main(
     players: &mut PlayerSet,
     window: &ApplicationWindow,
@@ -118,16 +122,7 @@ fn maybe_trigger_side_hide_right_main(
     let monitor_width = monitor_geo.width();
 
     let (window_left, window_top) = current_window_left_top(window);
-    let (threshold_x, _) = map_source_point_to_widget(
-        image,
-        current_pixbuf,
-        players.side_hide_right_trigger_pixel_x,
-        players.side_hide_right_anchor_pixel_y,
-    );
-    let threshold_screen_x = window_left + threshold_x;
-    let is_near_right_edge =
-        threshold_screen_x >= monitor_width - players.side_hide_right_trigger_tolerance_px;
-    if !is_near_right_edge {
+    if !is_in_side_hide_right_trigger_range(players, window_left, monitor_width, image, current_pixbuf) {
         return;
     }
 
@@ -149,6 +144,59 @@ fn maybe_trigger_side_hide_right_main(
     window.set_margin(Edge::Top, new_top);
 
     players.side_hide_right_main.start();
+}
+
+// 统一判断：当前窗口是否仍处于 SideHide 右边界触发范围
+fn is_in_side_hide_right_trigger_range(
+    players: &PlayerSet,
+    window_left: i32,
+    monitor_width: i32,
+    image: &Image,
+    current_pixbuf: &Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+) -> bool {
+    let (threshold_x, _) = map_source_point_to_widget(
+        image,
+        current_pixbuf,
+        players.side_hide_right_trigger_pixel_x,
+        players.side_hide_right_anchor_pixel_y,
+    );
+    let threshold_screen_x = window_left + threshold_x;
+    threshold_screen_x >= monitor_width - players.side_hide_right_trigger_tolerance_px
+}
+
+// 若拖拽导致离开触发范围，则立即终止所有 SideHide（不等待收尾段）
+fn maybe_stop_side_hide_right_when_out_of_range(
+    players: &mut PlayerSet,
+    window: &ApplicationWindow,
+    image: &Image,
+    current_pixbuf: &Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+) {
+    if !players.side_hide_right_main.is_active() && !players.side_hide_right_rise.is_active() {
+        return;
+    }
+
+    let Some(surface) = window.surface() else {
+        return;
+    };
+    let Some(monitor) = surface.display().monitor_at_surface(&surface) else {
+        return;
+    };
+    let monitor_width = monitor.geometry().width();
+    let (window_left, _) = current_window_left_top(window);
+    let is_in_range = is_in_side_hide_right_trigger_range(
+        players,
+        window_left,
+        monitor_width,
+        image,
+        current_pixbuf,
+    );
+
+    if is_in_range {
+        return;
+    }
+
+    players.side_hide_right_rise.stop();
+    players.side_hide_right_main.stop();
 }
 
 struct IdleEventDispatcher {
@@ -197,6 +245,13 @@ impl IdleEventDispatcher {
 
 // ===== 请求分发器：将原子请求路由到各播放器 =====
 fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
+    // 记录 hover 状态；是否真正触发 rise 由 SideHide_Main 活跃态二次门控
+    match reqs.hover {
+        HOVER_ANIM_START_REQUESTED => players.hover_active = true,
+        HOVER_ANIM_END_REQUESTED => players.hover_active = false,
+        _ => {}
+    }
+
     match reqs.drag {
         DRAG_ANIM_START_REQUESTED => {
             players.shutdown.stop();
@@ -261,7 +316,8 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     }
 
     if players.side_hide_right_main.is_active() {
-        if reqs.hover == HOVER_ANIM_START_REQUESTED {
+        // 只有 main 已经活跃时，hover 才允许拉起 rise
+        if players.hover_active {
             players.side_hide_right_rise.start();
             return;
         }
@@ -316,9 +372,6 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             _ => {}
         }
 
-        if reqs.hover == HOVER_ANIM_START_REQUESTED {
-            players.side_hide_right_rise.start();
-        }
     }
 }
 
@@ -449,6 +502,7 @@ fn build_players(
         side_hide_right_anchor_pixel_x: animation_config.side_hide_right_anchor_pixel_x,
         side_hide_right_anchor_pixel_y: animation_config.side_hide_right_anchor_pixel_y,
         side_hide_right_trigger_tolerance_px: animation_config.side_hide_right_trigger_tolerance_px,
+        hover_active: false,
         default_idle: DefaultIdlePlayer::new(animation_config, current_mode)?,
     };
 
@@ -537,6 +591,12 @@ pub fn load_carousel_images(
                 let reqs = consume_requests();
                 maybe_update_mode(&mut players, &stats);
                 dispatch_requests(&mut players, reqs);
+                maybe_stop_side_hide_right_when_out_of_range(
+                    &mut players,
+                    &window,
+                    &image,
+                    &current_pixbuf,
+                );
                 maybe_trigger_side_hide_right_main(&mut players, &window, &image, &current_pixbuf);
                 advance_frame(&mut players)
             };

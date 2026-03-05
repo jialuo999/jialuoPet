@@ -1,20 +1,31 @@
+/// 宠物等级与成长状态
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PetLevelState {
+    /// 当前等级
     pub level: u32,
+    /// 等级上限（阶段）
     pub level_max: u32,
+    /// 当前经验值
     pub exp: f64,
+    /// 好感度上限
     pub likability_max: f64,
+    /// 体力上限
     pub strength_max: f64,
+    /// 心情上限
     pub feeling_max: f64,
 }
 
+/// 增加经验后的升级结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AddExpResult {
+    /// 是否升级
     pub leveled: bool,
+    /// 是否阶段提升
     pub stage_up: bool,
 }
 
 impl Default for PetLevelState {
+    /// 默认初始状态：1级，经验0，各上限100
     fn default() -> Self {
         let mut state = Self {
             level: 1,
@@ -29,26 +40,31 @@ impl Default for PetLevelState {
     }
 }
 
+/// 计算当前等级升级所需经验
 pub fn level_up_need(level: u32) -> f64 {
     200.0 * level as f64 - 100.0
 }
 
+/// 根据等级和阶段重新计算体力/心情上限
 pub fn recalc_caps(state: &mut PetLevelState) {
     let base = (state.level as f64 * (1.0 + state.level_max as f64)).powf(0.75);
     state.strength_max = 100.0 + (base * 4.0).floor();
     state.feeling_max = 100.0 + (base * 2.0).floor();
 }
 
+/// 根据等级和阶段计算好感度上限
 pub fn likability_max_from_level_state(level: u32, level_max: u32) -> f64 {
     if level_max == 0 {
         return 100.0 + (level.saturating_sub(1) as f64) * 10.0;
     }
 
+    // 阶段起点
     let stage = level_max as u64;
     let level_u64 = level as u64;
     let stage_start_level = 100_u64.saturating_mul(stage);
     let stage_progress = level_u64.saturating_sub(stage_start_level);
 
+    // 总升级数（含阶段累计）
     let total_level_ups = 1000_u64
         .saturating_add((stage.saturating_sub(1)).saturating_mul(1001_u64))
         .saturating_add(stage_progress);
@@ -56,6 +72,7 @@ pub fn likability_max_from_level_state(level: u32, level_max: u32) -> f64 {
     100.0 + total_level_ups as f64 * 10.0
 }
 
+/// 增加经验并判断是否升级/阶段提升
 pub fn add_exp(state: &mut PetLevelState, delta_exp: f64) -> AddExpResult {
     state.exp += delta_exp;
 

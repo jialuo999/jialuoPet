@@ -7,7 +7,9 @@ use super::common::{
     pseudo_random_index, Segment,
 };
 
+/// 查找与当前模式（mode）最匹配的子目录，优先级：mode > Nomal > Happy
 fn collect_mode_dir(side_hide_root: &Path, mode: PetMode) -> Option<PathBuf> {
+    // 1. 优先查找与当前模式完全匹配的目录
     let mut mode_dirs: Vec<PathBuf> = collect_dir_paths(side_hide_root)
         .into_iter()
         .filter(|path| {
@@ -23,6 +25,7 @@ fn collect_mode_dir(side_hide_root: &Path, mode: PetMode) -> Option<PathBuf> {
         return Some(path);
     }
 
+    // 2. 若无则降级查找 Nomal
     if mode != PetMode::Nomal {
         let mut nomal_dirs: Vec<PathBuf> = collect_dir_paths(side_hide_root)
             .into_iter()
@@ -39,6 +42,7 @@ fn collect_mode_dir(side_hide_root: &Path, mode: PetMode) -> Option<PathBuf> {
         }
     }
 
+    // 3. 再降级查找 Happy
     if mode != PetMode::Happy {
         let mut happy_dirs: Vec<PathBuf> = collect_dir_paths(side_hide_root)
             .into_iter()
@@ -53,9 +57,11 @@ fn collect_mode_dir(side_hide_root: &Path, mode: PetMode) -> Option<PathBuf> {
         return happy_dirs.into_iter().next();
     }
 
+    // 4. 都没有则返回 None
     None
 }
 
+/// 收集 SideHide 动画起始段（A 段）所有帧文件
 pub(crate) fn collect_side_hide_start_files(side_hide_root: &Path, mode: PetMode) -> Vec<PathBuf> {
     let files = load_frames_with_fallback(side_hide_root, mode, Segment::A);
     if !files.is_empty() {
