@@ -165,7 +165,6 @@ impl PetStatsService {
     }
 
     // 统一物品使用入口：所有商品效果都通过 effects 字段生效。
-    #[allow(dead_code)]
     pub fn on_use_item(&mut self, item: &ItemDef) {
         self.apply_likability_gain(item.effects.likability);
         self.apply_feeling_gain(item.effects.mood);

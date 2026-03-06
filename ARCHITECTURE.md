@@ -28,11 +28,12 @@
 - **交互层**：
   - `src/drag.rs`：长按拖拽、捏捏区域判断、窗口跟随与拖拽动画触发。
   - `src/interaction/*`：输入探针、右键菜单、输入区域裁剪、头/身体触摸区域判定。
-- **状态展示层**：`src/ui/stats/panel.rs`
-  - 仅负责 GTK 可视化面板渲染（`StatsPanel`）。
+- **状态展示层**：`src/ui/*`
+  - `src/ui/stats/panel.rs`：状态面板渲染（`StatsPanel`，Popover）。
+  - `src/ui/food/drug_panel.rs`：投喂分类面板渲染（`FeedPanel`，浮动 Window + 网格）。
 - **状态计算层**：`src/stats/*`
   - `model.rs`：纯数据结构与纯计算函数（`PetStats`、`PetMode`、`InteractType`、模式判断与等级公式）。
-  - `food.rs`：投喂项模型（`FoodItem`：name/likability/feeling/strength_food/strength_drink）。
+  - `food.rs`：通用物品模型（`ItemDef`/`ItemEffects`/`ItemKind`）。
   - `service.rs`：带副作用的状态服务（衰减、投喂、互动、升级、配置上限应用）。
   - `mod.rs`：状态模块统一导出。
 - **设置与窗口层**：
@@ -58,7 +59,7 @@
    - 设置首帧；
   - 启动动画定时循环（`CAROUSEL_INTERVAL_MS`，当前 130ms）。
 5. 启动独立 stats 定时器（周期取 `stats_service.logic_interval_secs()`，默认 5 秒）。
-6. 绑定交互：输入探针、长按拖拽、头/身体点击区域、右键菜单。
+6. 绑定交互：输入探针、长按拖拽、头/身体点击区域、右键菜单（投喂分类子菜单 + 系统子菜单）。
 7. 创建并连接 `StatsPanel`，并启动配置文件热更新监听。
 
 ## 4. 动画系统设计
@@ -180,6 +181,20 @@
 - `StatsPanel` 只读 `stats_service.get_stats()` 与 `stats_service.cal_mode()`，不持有业务状态逻辑。
 - 右键菜单中的“面板”按钮用于显示/隐藏。
 
+### 6.1.1 投喂分类面板（新增）
+
+- 投喂入口在右键菜单 `投喂` 子菜单，包含：`主食/饮品/零食/礼物/药物/功能`。
+- 每个分类由 `FeedPanel` 以浮动 `Window` 展示，UI 风格与“系统->设置”一致。
+- 面板主体为 `Grid`（井字排版）+ `ScrolledWindow`，图片来源于 `assets/image/food/<category>`。
+- 点击物品后读取对应 LPS 配置并调用 `PetStatsService::on_use_item` 生效，同时刷新状态面板并持久化存档。
+- LPS 读取映射：
+  - 主食：`food.lps` + `timelimit.lps`（`type=Meal`）
+  - 饮品：`food.lps` + `moredrink.lps` + `timelimit.lps`（`type=Drink`）
+  - 零食：`food.lps` + `timelimit.lps`（`type=Snack`）
+  - 礼物：`gift.lps` + `timelimit.lps`（`type=Gift`）
+  - 药物：`drug.lps`（`type=Drug`）
+  - 功能：`food.lps` + `timelimit.lps`（`type=Functional`）
+
 ### 6.2 配置热更新
 
 `config.toml` 变更后流程：
@@ -210,10 +225,10 @@
   3. 若体力足够但心情已满：仅触发动画，不改数值（返回 `true`）。
   4. 若体力足够且心情未满：执行统一效果（`strength -= 2`、`feeling += 1`、`exp += level`），并返回 `true`。
   5. 成功互动（返回 `true`）会重置“距离上次互动秒数”。
-- `on_feed`（投喂）改为接收 `&FoodItem`：
+- 投喂统一入口为 `on_use_item(&ItemDef)`（`on_feed` 仅保留别名转发）：
   1. 先加 `likability`（带溢出转健康）；
   2. 再加 `feeling`（通过 `apply_feeling_gain` 联动好感）；
-  3. 维持饱食/口渴恢复逻辑。
+  3. 应用 `StrengthFood/StrengthDrink/Strength/Health/Exp` 等字段并统一 clamp/升级。
 - `on_tick`（时间推进）新增自动消耗：
   1. 维持基础衰减（饱食/口渴/体力自然下降）。
   2. 当 `strength_food >= basic_stat_max * 50%`：额外消耗饱食并等量恢复体力（“消耗食物换体力”）。

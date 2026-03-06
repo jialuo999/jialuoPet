@@ -6,6 +6,8 @@ pub enum ItemKind {
     Snack,
     Drink,
     Gift,
+    Drug,
+    Functional,
 }
 
 // ===== 通用效果字段 =====
