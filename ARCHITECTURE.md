@@ -30,7 +30,7 @@
   - `src/interaction/*`：输入探针、右键菜单、输入区域裁剪、头/身体触摸区域判定。
 - **状态展示层**：`src/ui/*`
   - `src/ui/stats/panel.rs`：状态面板渲染（`StatsPanel`，Popover）。
-  - `src/ui/food/drug_panel.rs`：投喂分类面板渲染（`FeedPanel`，浮动 Window + 网格）。
+  - `src/ui/food/drug_panel.rs`：投喂分类面板渲染（`FeedPanel`，浮动 Window + `FlowBox` 统一网格）。
 - **状态计算层**：`src/stats/*`
   - `model.rs`：纯数据结构与纯计算函数（`PetStats`、`PetMode`、`InteractType`、模式判断与等级公式）。
   - `food.rs`：通用物品模型（`ItemDef`/`ItemEffects`/`ItemKind`）。
@@ -38,9 +38,9 @@
   - `mod.rs`：状态模块统一导出。
 - **设置与窗口层**：
   - `src/settings/*`：设置模型、设置面板、持久化存储。
-    - `model.rs`：`AppSettings` 包含 `remember_position`（bool）和 `scale_factor`（f64，范围 0.5~2.0）。
-    - `panel.rs`：设置 UI，包含水平滑块（50%~200%）、百分比标签、恢复默认按钮。
-    - `storage.rs`：通过 `settings/user_settings.toml` 持久化缩放因子。
+    - `model.rs`：`AppSettings` 包含 `remember_position`、`window_position`、`scale_factor`、`auto_close_panels_on_outside_click`。
+    - `panel.rs`：设置 UI，包含位置记忆、"点击宠物空白处时自动关闭面板"、缩放滑块（50%~200%）、百分比标签、恢复默认按钮。
+    - `storage.rs`：通过 `settings/user_settings.toml` 持久化设置项（位置记忆、窗口位置、缩放因子、面板自动关闭开关）。
   - `src/window/position.rs`：窗口位置读写与应用。
 
 ### 2.2 资源分层
@@ -185,7 +185,9 @@
 
 - 投喂入口在右键菜单 `投喂` 子菜单，包含：`主食/饮品/零食/礼物/药物/功能`。
 - 每个分类由 `FeedPanel` 以浮动 `Window` 展示，UI 风格与“系统->设置”一致。
-- 面板主体为 `Grid`（井字排版）+ `ScrolledWindow`，图片来源于 `assets/image/food/<category>`。
+- 面板主体为 `FlowBox` + `ScrolledWindow`，图片来源于 `assets/image/food/<category>`。
+- 物品单元格尺寸由常量统一（当前在 `drug_panel.rs` 的 `ITEM_CELL_WIDTH/ITEM_CELL_HEIGHT`），并配合 CSS 固定普通/悬停/按下状态尺寸。
+- 物品名显示使用固定宽度视口 + 文本滚动，超长名称不会撑大单元格。
 - 点击物品后读取对应 LPS 配置并调用 `PetStatsService::on_use_item` 生效，同时刷新状态面板并持久化存档。
 - LPS 读取映射：
   - 主食：`food.lps` + `timelimit.lps`（`type=Meal`）
@@ -194,6 +196,12 @@
   - 礼物：`gift.lps` + `timelimit.lps`（`type=Gift`）
   - 药物：`drug.lps`（`type=Drug`）
   - 功能：`food.lps` + `timelimit.lps`（`type=Functional`）
+
+### 6.1.2 面板关闭策略（新增）
+
+- 左键点击宠物空白处的“自动收起状态/投喂面板”行为由设置项 `auto_close_panels_on_outside_click` 控制。
+- 默认值为 `false`，即默认手动关闭（点击面板内“退出”按钮或窗口关闭按钮）。
+- 设置入口位于“系统 -> 设置”，勾选项文案为“点击宠物空白处时自动关闭面板”。
 
 ### 6.2 配置热更新
 
@@ -263,9 +271,8 @@
    - 不自动保存；用户仍需点"保存"确认。
 
 4. **保存与持久化**：
-   - 点"保存"时调用 `SettingsStore::update_scale_factor(factor)`。
-   - 因子写入 `settings/user_settings.toml` 的 `scale_factor` 字段。
-   - 同时触发 `stats_service` 更新（如有设置变更），并通知动画配置重新加载。
+  - 点"保存"时同时写入位置记忆、面板自动关闭开关与缩放因子。
+  - `scale_factor` 写入 `settings/user_settings.toml` 的 `scale_factor` 字段。
 
 5. **取消/退出/关闭**：
    - 取消、退出或关闭面板时，滑块回滚到上次保存的值（预览被撤销）。

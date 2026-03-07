@@ -1,18 +1,31 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Application, ApplicationWindow, Box, Button, Grid, Image, Label, Orientation,
-    ScrolledWindow, Window,
+    Align, Application, ApplicationWindow, Box, Button, CssProvider, FlowBox, Image, Label,
+    Orientation, ScrolledWindow, SelectionMode, Window, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::rc::Rc;
+use std::time::Duration;
 
 use crate::stats::food::{ItemDef, ItemEffects, ItemKind};
 use crate::stats::PetStatsService;
 
-const THUMBNAIL_SIZE: i32 = 64;
-const GRID_COLUMNS: usize = 3;
+// 图片尺寸：修改这里可调整每个单元格中图片显示大小（像素）。
+const THUMBNAIL_SIZE: i32 = 48;
+// 统一单元格尺寸：在这里修改每个物品格子的宽高。
+const ITEM_CELL_WIDTH: i32 = 68;
+const ITEM_CELL_HEIGHT: i32 = 62;
+// 文字尺寸：修改这里可调整名称最多显示字符数与字号（pt）。
+const ITEM_NAME_VIEW_CHARS: usize = 6;
+const ITEM_NAME_FONT_PT: i32 = 9;
+const ITEM_NAME_SCROLL_GAP_CHARS: usize = 4;
+const ITEM_NAME_SCROLL_INTERVAL_MS: u64 = 240;
+const ITEM_NAME_VIEWPORT_WIDTH: i32 = 72;
+const ITEM_NAME_VIEWPORT_HEIGHT: i32 = 18;
+// FlowBox 默认每行子项数量有上限（通常为 7），显式放宽避免窗口变宽后列数不再增加。
+const FLOWBOX_MAX_COLUMNS: u32 = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeedCategory {
@@ -109,12 +122,33 @@ impl FeedPanel {
         window.set_modal(false);
         window.set_hide_on_close(true);
 
+        // 固定单元格在普通/悬停/按下状态下的尺寸与内边距，避免视觉尺寸跳变。
+        let css_provider = CssProvider::new();
+        css_provider.load_from_data(
+            &format!(
+                ".feed-item-cell,\n\
+                 .feed-item-cell:hover,\n\
+                 .feed-item-cell:active,\n\
+                 .feed-item-cell:checked {{\n\
+                    min-width: {}px;\n\
+                    max-width: {}px;\n\
+                    min-height: {}px;\n\
+                    max-height: {}px;\n\
+                    padding: 0;\n\
+                    margin: 0;\n\
+                }}",
+                ITEM_CELL_WIDTH, ITEM_CELL_WIDTH, ITEM_CELL_HEIGHT, ITEM_CELL_HEIGHT
+            ),
+        );
+        window
+            .style_context()
+            .add_provider(&css_provider, STYLE_PROVIDER_PRIORITY_APPLICATION);
+
         let panel_box = Box::new(Orientation::Vertical, 8);
         panel_box.set_margin_top(12);
         panel_box.set_margin_bottom(12);
         panel_box.set_margin_start(12);
         panel_box.set_margin_end(12);
-        panel_box.set_width_request(480);
 
         let title = Label::new(Some(category.panel_title()));
         title.set_halign(Align::Start);
@@ -128,9 +162,15 @@ impl FeedPanel {
         scroll.set_hexpand(true);
         scroll.set_vexpand(true);
 
-        let grid = Grid::new();
-        grid.set_column_spacing(10);
-        grid.set_row_spacing(10);
+        let flow = FlowBox::new();
+        flow.set_column_spacing(10);
+        flow.set_row_spacing(10);
+        flow.set_selection_mode(SelectionMode::None);
+        // 固定 FlowBox 子项为统一网格尺寸，避免文本自然宽度影响每个单元格大小。
+        flow.set_homogeneous(true);
+        flow.set_valign(Align::Start);
+        flow.set_vexpand(false);
+        flow.set_max_children_per_line(FLOWBOX_MAX_COLUMNS);
 
         let image_paths = list_png_files(category.image_dir());
         let item_map = load_items(category);
@@ -140,7 +180,7 @@ impl FeedPanel {
             empty.set_halign(Align::Start);
             scroll.set_child(Some(&empty));
         } else {
-            for (idx, path) in image_paths.iter().enumerate() {
+            for path in &image_paths {
                 let cell = build_item_cell(
                     path,
                     &item_map,
@@ -148,11 +188,9 @@ impl FeedPanel {
                     on_after_use.clone(),
                     &status_label,
                 );
-                let col = (idx % GRID_COLUMNS) as i32;
-                let row = (idx / GRID_COLUMNS) as i32;
-                grid.attach(&cell, col, row, 1, 1);
+                flow.insert(&cell, -1);
             }
-            scroll.set_child(Some(&grid));
+            scroll.set_child(Some(&flow));
         }
 
         panel_box.append(&scroll);
@@ -232,9 +270,19 @@ fn build_item_cell(
     status_label: &Label,
 ) -> Button {
     let button = Button::new();
+    button.add_css_class("feed-item-cell");
+    button.set_width_request(ITEM_CELL_WIDTH);
+    button.set_height_request(ITEM_CELL_HEIGHT);
+    button.set_hexpand(false);
+    button.set_vexpand(false);
+    button.set_halign(Align::Center);
+    button.set_valign(Align::Start);
 
     let content = Box::new(Orientation::Vertical, 4);
+    content.set_width_request(ITEM_CELL_WIDTH);
+    content.set_height_request(ITEM_CELL_HEIGHT);
     content.set_halign(Align::Center);
+    content.set_valign(Align::Center);
 
     let image = Image::from_file(path);
     image.set_pixel_size(THUMBNAIL_SIZE);
@@ -246,11 +294,22 @@ fn build_item_cell(
         .and_then(|name| name.to_str())
         .unwrap_or("unknown")
         .to_string();
+    let name_viewport = Box::new(Orientation::Horizontal, 0);
+    name_viewport.set_width_request(ITEM_NAME_VIEWPORT_WIDTH);
+    name_viewport.set_height_request(ITEM_NAME_VIEWPORT_HEIGHT);
+    name_viewport.set_halign(Align::Center);
+    name_viewport.set_valign(Align::Center);
     let name_label = Label::new(Some(&filename));
     name_label.set_halign(Align::Center);
-    name_label.set_wrap(true);
-    name_label.set_max_width_chars(12);
-    content.append(&name_label);
+    name_label.set_valign(Align::Center);
+    name_label.set_wrap(false);
+    name_label.set_single_line_mode(true);
+    name_label.set_width_chars(ITEM_NAME_VIEW_CHARS as i32);
+    name_label.set_max_width_chars(ITEM_NAME_VIEW_CHARS as i32);
+    name_label.set_tooltip_text(Some(&filename));
+    setup_scrolling_name_label(&name_label, &filename);
+    name_viewport.append(&name_label);
+    content.append(&name_viewport);
 
     button.set_child(Some(&content));
 
@@ -295,6 +354,52 @@ fn load_items(category: FeedCategory) -> HashMap<String, ItemDef> {
     }
 
     items
+}
+
+fn setup_scrolling_name_label(label: &Label, full_text: &str) {
+    let chars: Vec<char> = full_text.chars().collect();
+    if chars.is_empty() {
+        set_label_text_with_font(label, "");
+        return;
+    }
+
+    if chars.len() <= ITEM_NAME_VIEW_CHARS {
+        set_label_text_with_font(label, full_text);
+        return;
+    }
+
+    let mut source = chars.clone();
+    source.extend(std::iter::repeat(' ').take(ITEM_NAME_SCROLL_GAP_CHARS));
+    let source_len = source.len();
+    let mut frames = Vec::with_capacity(source_len);
+    for start in 0..source_len {
+        let mut frame = String::with_capacity(ITEM_NAME_VIEW_CHARS * 3);
+        for offset in 0..ITEM_NAME_VIEW_CHARS {
+            let idx = (start + offset) % source_len;
+            frame.push(source[idx]);
+        }
+        frames.push(frame);
+    }
+
+    set_label_text_with_font(label, &frames[0]);
+
+    let weak_label = label.downgrade();
+    let mut frame_idx = 1usize;
+    glib::timeout_add_local(Duration::from_millis(ITEM_NAME_SCROLL_INTERVAL_MS), move || {
+        let Some(label) = weak_label.upgrade() else {
+            return glib::ControlFlow::Break;
+        };
+
+        set_label_text_with_font(&label, &frames[frame_idx]);
+        frame_idx = (frame_idx + 1) % frames.len();
+        glib::ControlFlow::Continue
+    });
+}
+
+fn set_label_text_with_font(label: &Label, text: &str) {
+    let font_size = ITEM_NAME_FONT_PT * gtk4::pango::SCALE;
+    let escaped_text = glib::markup_escape_text(text);
+    label.set_markup(&format!("<span size=\"{}\">{}</span>", font_size, escaped_text));
 }
 
 fn parse_item_line(line: &str, type_filter: &str) -> Option<ItemDef> {

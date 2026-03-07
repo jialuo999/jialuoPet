@@ -11,6 +11,8 @@ pub struct SettingsPanel {
     window: Window,
     remember_position_check: CheckButton,
     saved_remember_position: Rc<RefCell<bool>>,
+    auto_close_panels_check: CheckButton,
+    saved_auto_close_panels: Rc<RefCell<bool>>,
     scale: Scale,
     saved_scale_factor: Rc<Cell<f64>>,
 }
@@ -20,7 +22,7 @@ impl SettingsPanel {
         app: &Application,
         parent_window: &ApplicationWindow,
         initial_settings: AppSettings,
-        on_save_settings: Rc<dyn Fn(bool, f64)>,
+        on_save_settings: Rc<dyn Fn(bool, bool, f64)>,
         on_scale_preview: Rc<dyn Fn(f64)>,
     ) -> Self {
         // ===== 窗口与容器 =====
@@ -48,6 +50,10 @@ impl SettingsPanel {
         let remember_position_check = CheckButton::with_label("位置记忆");
         remember_position_check.set_active(initial_settings.remember_position);
         panel_box.append(&remember_position_check);
+
+        let auto_close_panels_check = CheckButton::with_label("点击宠物空白处时自动关闭面板");
+        auto_close_panels_check.set_active(initial_settings.auto_close_panels_on_outside_click);
+        panel_box.append(&auto_close_panels_check);
 
         // ===== 缩放设置区 =====
         let scale_title = Label::new(Some("缩放"));
@@ -91,6 +97,9 @@ impl SettingsPanel {
         window.set_child(Some(&panel_box));
 
         let saved_remember_position = Rc::new(RefCell::new(initial_settings.remember_position));
+        let saved_auto_close_panels = Rc::new(RefCell::new(
+            initial_settings.auto_close_panels_on_outside_click,
+        ));
         let saved_scale_factor = Rc::new(Cell::new(initial_settings.scale_factor));
 
         // ===== 事件绑定：滑块实时预览 =====
@@ -116,14 +125,18 @@ impl SettingsPanel {
         {
             let remember_position_check = remember_position_check.clone();
             let saved_remember_position = saved_remember_position.clone();
+            let auto_close_panels_check = auto_close_panels_check.clone();
+            let saved_auto_close_panels = saved_auto_close_panels.clone();
             let saved_scale_factor = saved_scale_factor.clone();
             let scale = scale.clone();
             let on_save_settings = on_save_settings.clone();
             save_button.connect_clicked(move |_| {
                 let remember_position = remember_position_check.is_active();
+                let auto_close_panels = auto_close_panels_check.is_active();
                 let scale_factor = scale.value() / 100.0;
-                on_save_settings(remember_position, scale_factor);
+                on_save_settings(remember_position, auto_close_panels, scale_factor);
                 *saved_remember_position.borrow_mut() = remember_position;
+                *saved_auto_close_panels.borrow_mut() = auto_close_panels;
                 saved_scale_factor.set(scale_factor);
             });
         }
@@ -132,10 +145,13 @@ impl SettingsPanel {
         {
             let remember_position_check = remember_position_check.clone();
             let saved_remember_position = saved_remember_position.clone();
+            let auto_close_panels_check = auto_close_panels_check.clone();
+            let saved_auto_close_panels = saved_auto_close_panels.clone();
             let saved_scale_factor = saved_scale_factor.clone();
             let scale = scale.clone();
             cancel_button.connect_clicked(move |_| {
                 remember_position_check.set_active(*saved_remember_position.borrow());
+                auto_close_panels_check.set_active(*saved_auto_close_panels.borrow());
                 scale.set_value(saved_scale_factor.get() * 100.0);
             });
         }
@@ -167,6 +183,8 @@ impl SettingsPanel {
             window,
             remember_position_check,
             saved_remember_position,
+            auto_close_panels_check,
+            saved_auto_close_panels,
             scale,
             saved_scale_factor,
         }
@@ -176,6 +194,8 @@ impl SettingsPanel {
     pub fn show(&self) {
         self.remember_position_check
             .set_active(*self.saved_remember_position.borrow());
+        self.auto_close_panels_check
+            .set_active(*self.saved_auto_close_panels.borrow());
         self.scale.set_value(self.saved_scale_factor.get() * 100.0);
         self.window.present();
     }

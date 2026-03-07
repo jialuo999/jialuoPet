@@ -15,6 +15,7 @@ pub struct AppSettings {
     pub remember_position: bool,
     pub window_position: Option<WindowPosition>,
     pub scale_factor: f64,
+    pub auto_close_panels_on_outside_click: bool,
 }
 
 impl Default for AppSettings {
@@ -23,6 +24,7 @@ impl Default for AppSettings {
             remember_position: true,
             window_position: None,
             scale_factor: 1.0,
+            auto_close_panels_on_outside_click: false,
         }
     }
 }
