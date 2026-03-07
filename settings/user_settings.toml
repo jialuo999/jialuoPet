@@ -1,7 +1,6 @@
 remember_position = true
 scale_factor = 1.0
-auto_close_panels_on_outside_click = false
 
 [window_position]
-left = 687
-top = 100
+left = 287
+top = 371

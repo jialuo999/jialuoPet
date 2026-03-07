@@ -10,7 +10,7 @@ mod window;
 
 // ===== 外部依赖导入 =====
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, CssProvider, GestureClick, STYLE_PROVIDER_PRIORITY_APPLICATION};
+use gtk4::{Application, ApplicationWindow, CssProvider, STYLE_PROVIDER_PRIORITY_APPLICATION};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use std::cell::RefCell;
 use std::process::Command;
@@ -255,15 +255,9 @@ fn build_ui(app: &Application) {
                 app,
                 &window,
                 settings_store.snapshot(),
-                Rc::new(move |remember_position, auto_close_panels, scale_factor| {
+                Rc::new(move |remember_position, scale_factor| {
                     if let Err(err) = settings_store.update_remember_position(remember_position) {
                         eprintln!("保存设置失败：{}", err);
-                        return;
-                    }
-                    if let Err(err) = settings_store
-                        .update_auto_close_panels_on_outside_click(auto_close_panels)
-                    {
-                        eprintln!("保存面板关闭设置失败：{}", err);
                         return;
                     }
                     if let Err(err) = settings_store.update_scale_factor(scale_factor) {
@@ -401,23 +395,6 @@ fn build_ui(app: &Application) {
             },
         );
     }
-
-    // ===== 左键点击空白处：收起统计面板 =====
-    let dismiss_panel_click = GestureClick::new();
-    dismiss_panel_click.set_button(1);
-    {
-        let settings_store_for_dismiss = settings_store.clone();
-        let stats_panel = stats_panel.clone();
-        let feed_panel = feed_panel.clone();
-        dismiss_panel_click.connect_pressed(move |_, _, _, _| {
-            if !settings_store_for_dismiss.auto_close_panels_on_outside_click() {
-                return;
-            }
-            stats_panel.hide();
-            feed_panel.hide();
-        });
-    }
-    image.add_controller(dismiss_panel_click);
     
     // ===== 展示窗口 =====
     window.present();

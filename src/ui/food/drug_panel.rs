@@ -329,11 +329,6 @@ impl FeedPanel {
     }
 
     pub fn toggle_category(&self, category: FeedCategory) {
-        if self.window.is_visible() && self.current_category.get() == category {
-            self.window.hide();
-            return;
-        }
-
         self.switch_category(category);
         self.present();
     }
@@ -395,6 +390,10 @@ impl FeedPanel {
             } else {
                 panel_buy.status_label.set_text(&format!("已购买放入背包：{}", bought.join("、")));
             }
+
+            if panel_buy.should_auto_clear_shop_selection() {
+                panel_buy.clear_shop_selection();
+            }
         });
 
         let panel_use = self.clone_ref();
@@ -427,7 +426,21 @@ impl FeedPanel {
             if any_used {
                 (panel_use.on_after_use)();
             }
+
+            if panel_use.should_auto_clear_shop_selection() {
+                panel_use.clear_shop_selection();
+            }
         });
+    }
+
+    fn should_auto_clear_shop_selection(&self) -> bool {
+        !self.current_category.get().is_inventory()
+    }
+
+    fn clear_shop_selection(&self) {
+        // 重新加载格子以重置每个单元格内部维护的选中状态和高亮样式。
+        self.selected_items.borrow_mut().clear();
+        self.reload_items_for(self.current_category.get());
     }
 
     fn refresh_sidebar_state(&self) {

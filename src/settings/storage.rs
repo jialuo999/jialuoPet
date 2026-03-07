@@ -51,10 +51,6 @@ impl SettingsStore {
         self.settings.borrow().scale_factor
     }
 
-    pub fn auto_close_panels_on_outside_click(&self) -> bool {
-        self.settings.borrow().auto_close_panels_on_outside_click
-    }
-
 	// 更新缩放因子并持久化
     pub fn update_scale_factor(&self, factor: f64) -> anyhow::Result<()> {
         {
@@ -69,14 +65,6 @@ impl SettingsStore {
         {
             let mut settings = self.settings.borrow_mut();
             settings.remember_position = enabled;
-        }
-        self.persist()
-    }
-
-    pub fn update_auto_close_panels_on_outside_click(&self, enabled: bool) -> anyhow::Result<()> {
-        {
-            let mut settings = self.settings.borrow_mut();
-            settings.auto_close_panels_on_outside_click = enabled;
         }
         self.persist()
     }

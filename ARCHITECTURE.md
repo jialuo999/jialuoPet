@@ -38,9 +38,9 @@
   - `mod.rs`：状态模块统一导出。
 - **设置与窗口层**：
   - `src/settings/*`：设置模型、设置面板、持久化存储。
-    - `model.rs`：`AppSettings` 包含 `remember_position`、`window_position`、`scale_factor`、`auto_close_panels_on_outside_click`。
-    - `panel.rs`：设置 UI，包含位置记忆、"点击宠物空白处时自动关闭面板"、缩放滑块（50%~200%）、百分比标签、恢复默认按钮。
-    - `storage.rs`：通过 `settings/user_settings.toml` 持久化设置项（位置记忆、窗口位置、缩放因子、面板自动关闭开关）。
+    - `model.rs`：`AppSettings` 包含 `remember_position`、`window_position`、`scale_factor`。
+    - `panel.rs`：设置 UI，包含位置记忆、缩放滑块（50%~200%）、百分比标签、恢复默认按钮。
+    - `storage.rs`：通过 `settings/user_settings.toml` 持久化设置项（位置记忆、窗口位置、缩放因子）。
   - `src/window/position.rs`：窗口位置读写与应用。
 
 ### 2.2 资源分层
@@ -197,11 +197,9 @@
   - 药物：`drug.lps`（`type=Drug`）
   - 功能：`food.lps` + `timelimit.lps`（`type=Functional`）
 
-### 6.1.2 面板关闭策略（新增）
+### 6.1.2 面板关闭策略
 
-- 左键点击宠物空白处的“自动收起状态/投喂面板”行为由设置项 `auto_close_panels_on_outside_click` 控制。
-- 默认值为 `false`，即默认手动关闭（点击面板内“退出”按钮或窗口关闭按钮）。
-- 设置入口位于“系统 -> 设置”，勾选项文案为“点击宠物空白处时自动关闭面板”。
+- 状态面板与投喂面板默认手动关闭（点击面板内“退出”按钮或窗口关闭按钮）。
 
 ### 6.2 配置热更新
 

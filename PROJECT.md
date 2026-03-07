@@ -149,7 +149,7 @@ let frames = loader::load_animation("idle")
 | 缩放范围 | 50% ~ 200%，步进 5% | 保证最小可用性，避免过小/过大 |
 | 默认值 | 100% (DEFAULT_PIXEL_SIZE = 256px) | 与原始素材1:1对应 |
 | 实时预览 | 滑块拖动时立即调用 `image.set_pixel_size()` | 用户实时看到效果 |
-| 持久化 | 保存到 `settings/user_settings.toml` | `remember_position`、`window_position`、`scale_factor`、`auto_close_panels_on_outside_click` |
+| 持久化 | 保存到 `settings/user_settings.toml` | `remember_position`、`window_position`、`scale_factor` |
 | 交互适配 | 所有触摸区域用 `widget_size / pixbuf_size` 比率映射 | 缩放不影响命中精度 |
 | 输入区域 | 每帧重算 alpha 通道输入区域 | 缩放后 alpha 区域自动缩放 |
 
@@ -183,10 +183,6 @@ left = 1137
 top = 356
 
 scale_factor = 1.0  # 范围 0.5 ~ 2.0，默认 1.0（100%）
-
-# false: 手动关闭面板
-# true: 点击宠物空白处自动关闭状态/投喂面板
-auto_close_panels_on_outside_click = false
 ```
 
 ### 5.3 PNG文件规范
