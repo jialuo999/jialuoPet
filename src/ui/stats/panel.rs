@@ -2,7 +2,7 @@
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Image, Label, Orientation, Popover, ProgressBar};
 
-use crate::stats::{PetMode, PetStatsService};
+use crate::stats::PetStatsService;
 
 // ===== 状态面板组件 =====
 pub struct StatsPanel {
@@ -23,7 +23,7 @@ pub struct StatsPanel {
     experience_bar: ProgressBar,
     experience_value: Label,
     level_value: Label,
-    mode_value: Label,
+    money_value: Label,
 }
 
 impl StatsPanel {
@@ -41,21 +41,9 @@ impl StatsPanel {
         root.set_margin_end(8);
         root.set_size_request(260, -1);
 
-        let title = Label::new(Some("角色健康系统"));
+        let title = Label::new(Some("角色属性"));
         title.set_halign(Align::Start);
         root.append(&title);
-
-        // ===== 状态行（模式 + 数值条） =====
-        let mode_row = Box::new(Orientation::Horizontal, 6);
-        let mode_title = Label::new(Some("状态"));
-        mode_title.set_halign(Align::Start);
-        mode_title.set_width_chars(6);
-        let mode_value = Label::new(None);
-        mode_value.set_halign(Align::End);
-        mode_value.set_hexpand(true);
-        mode_row.append(&mode_title);
-        mode_row.append(&mode_value);
-        root.append(&mode_row);
 
         let (stamina_row, stamina_bar, stamina_value) = build_stat_row("体力");
         let (satiety_row, satiety_bar, satiety_value) = build_stat_row("饱腹度");
@@ -65,6 +53,7 @@ impl StatsPanel {
         let (affinity_row, affinity_bar, affinity_value) = build_stat_row("好感度");
         let (experience_row, experience_bar, experience_value) = build_stat_row("经验值");
         let (level_row, level_value) = build_value_row("等级");
+        let (money_row, money_value) = build_value_row("金钱");
 
         root.append(&stamina_row);
         root.append(&satiety_row);
@@ -74,6 +63,7 @@ impl StatsPanel {
         root.append(&affinity_row);
         root.append(&experience_row);
         root.append(&level_row);
+        root.append(&money_row);
 
         popover.set_child(Some(&root));
 
@@ -96,7 +86,7 @@ impl StatsPanel {
             experience_bar,
             experience_value,
             level_value,
-            mode_value,
+            money_value,
         };
 
         panel.refresh();
@@ -126,7 +116,6 @@ impl StatsPanel {
     // ===== 数据刷新 =====
     pub fn refresh(&self) {
         let stats = self.stats_service.get_stats();
-        let mode = self.stats_service.cal_mode();
         let experience_need = stats.level_up_exp_needed();
 
         set_bar_value(
@@ -167,7 +156,7 @@ impl StatsPanel {
             experience_need,
         );
         self.level_value.set_text(&format!("Lev:{}", stats.level));
-        self.mode_value.set_text(mode_label(mode));
+        self.money_value.set_text(&format!("{}", stats.money));
     }
 }
 
@@ -219,11 +208,3 @@ fn set_bar_value(bar: &ProgressBar, value_label: &Label, value: f64, max: f64) {
     value_label.set_text(&format!("{:.0}/{:.0}", current, max_value));
 }
 
-fn mode_label(mode: PetMode) -> &'static str {
-    match mode {
-        PetMode::Happy => "Happy",
-        PetMode::Nomal => "Nomal",
-        PetMode::PoorCondition => "PoorCondition",
-        PetMode::Ill => "Ill",
-    }
-}

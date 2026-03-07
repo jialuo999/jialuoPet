@@ -1,13 +1,14 @@
 [stats]
-health = 97.24395617570578
-feeling = 113.94334690561097
+health = 100.0
+feeling = 113.72221226340113
 feeling_max = 114.0
 likability_max = 230.0
-strength = 60.49999999999997
+strength = 128.0
 strength_max = 128.0
-strength_food = 127.50000000000003
-strength_drink = 127.00000000000006
+strength_food = 127.15000000000005
+strength_drink = 126.3000000000001
 likability = 230.0
 level = 14
 level_stage = 0
-exp = 1454.2999999999984
+exp = 1714.0999999999804
+money = 978

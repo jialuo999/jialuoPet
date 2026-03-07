@@ -165,7 +165,15 @@ impl PetStatsService {
     }
 
     // 统一物品使用入口：所有商品效果都通过 effects 字段生效。
-    pub fn on_use_item(&mut self, item: &ItemDef) {
+    pub fn on_use_item(&mut self, item: &ItemDef) -> bool {
+        {
+            let mut stats = self.stats.borrow_mut();
+            if stats.money < item.price as u64 {
+                return false;
+            }
+            stats.money -= item.price as u64;
+        }
+
         self.apply_likability_gain(item.effects.likability);
         self.apply_feeling_gain(item.effects.mood);
 
@@ -179,11 +187,13 @@ impl PetStatsService {
         clamp_stats(&mut stats);
         apply_level_up_if_needed(&mut stats);
         clamp_stats(&mut stats);
+
+        true
     }
 
     #[allow(dead_code)]
-    pub fn on_feed(&mut self, item: &ItemDef) {
-        self.on_use_item(item);
+    pub fn on_feed(&mut self, item: &ItemDef) -> bool {
+        self.on_use_item(item)
     }
 
 	// 互动：消耗体力并变化心情/经验
@@ -331,6 +341,7 @@ impl PetStatsService {
         let base_output = WORK_BASE_OUTPUT_PER_GAME_MIN * game_minutes;
         let output = (base_output * (2.0 * efficiency - 0.5)).max(0.0);
         stats.exp += output;
+        stats.money = stats.money.saturating_add(output.round() as u64);
     }
 
     fn apply_nomal_tick(&mut self, game_minutes: f64) {

@@ -27,6 +27,7 @@ pub enum PetRuntimeState {
 
 // ===== 宠物核心数值模型 =====
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
 pub struct PetStats {
     pub health: f64,
     pub feeling: f64,
@@ -40,6 +41,7 @@ pub struct PetStats {
     pub level: u32,
     pub level_stage: u32,
     pub exp: f64,
+    pub money: u64,
 }
 
 impl Default for PetStats {
@@ -63,6 +65,7 @@ impl Default for PetStats {
             level,
             level_stage,
             exp: 0.0,
+            money: 1000,
         }
     }
 }

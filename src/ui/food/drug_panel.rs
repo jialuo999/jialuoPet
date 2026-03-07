@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::rc::Rc;
-use std::time::Duration;
 
 use crate::stats::food::{ItemDef, ItemEffects, ItemKind};
 use crate::stats::PetStatsService;
@@ -21,15 +20,13 @@ const ITEM_CELL_HEIGHT: i32 = 62;
 // 文字尺寸：修改这里可调整名称最多显示字符数与字号（pt）。
 const ITEM_NAME_VIEW_CHARS: usize = 6;
 const ITEM_NAME_FONT_PT: i32 = 9;
-const ITEM_NAME_SCROLL_GAP_CHARS: usize = 4;
-const ITEM_NAME_SCROLL_INTERVAL_MS: u64 = 240;
 const ITEM_NAME_VIEWPORT_WIDTH: i32 = 72;
 const ITEM_NAME_VIEWPORT_HEIGHT: i32 = 18;
 const SIDEBAR_WIDTH: i32 = 28;
 const SIDEBAR_BUTTON_HEIGHT: i32 = 44;
 const CONTENT_ROW_SPACING: i32 = 8;
 const FLOWBOX_COLUMN_SPACING: u32 = 3;
-const FLOWBOX_ROW_SPACING: u32 = 6;
+const FLOWBOX_ROW_SPACING: u32 = 3;
 // FlowBox 默认每行子项数量有上限（通常为 7），显式放宽避免窗口变宽后列数不再增加。
 const FLOWBOX_MAX_COLUMNS: u32 = 64;
 
@@ -456,7 +453,7 @@ fn build_item_cell(
     name_label.set_width_chars(ITEM_NAME_VIEW_CHARS as i32);
     name_label.set_max_width_chars(ITEM_NAME_VIEW_CHARS as i32);
     name_label.set_tooltip_text(Some(&filename));
-    setup_scrolling_name_label(&name_label, &filename);
+    set_label_text_with_font(&name_label, &filename);
     name_viewport.append(&name_label);
     content.append(&name_viewport);
 
@@ -466,9 +463,12 @@ fn build_item_cell(
         let status_label = status_label.clone();
         button.connect_clicked(move |_| {
             let mut service = stats_service.clone();
-            service.on_use_item(&item_def);
-            status_label.set_text(&format!("已使用：{}", item_def.id));
-            on_after_use();
+            if service.on_use_item(&item_def) {
+                status_label.set_text(&format!("已使用：{}", item_def.id));
+                on_after_use();
+            } else {
+                status_label.set_text(&format!("金钱不足：{} 需要 {}", item_def.id, item_def.price));
+            }
         });
     } else {
         let status_label = status_label.clone();
@@ -503,46 +503,6 @@ fn load_items(category: FeedCategory) -> HashMap<String, ItemDef> {
     }
 
     items
-}
-
-fn setup_scrolling_name_label(label: &Label, full_text: &str) {
-    let chars: Vec<char> = full_text.chars().collect();
-    if chars.is_empty() {
-        set_label_text_with_font(label, "");
-        return;
-    }
-
-    if chars.len() <= ITEM_NAME_VIEW_CHARS {
-        set_label_text_with_font(label, full_text);
-        return;
-    }
-
-    let mut source = chars.clone();
-    source.extend(std::iter::repeat(' ').take(ITEM_NAME_SCROLL_GAP_CHARS));
-    let source_len = source.len();
-    let mut frames = Vec::with_capacity(source_len);
-    for start in 0..source_len {
-        let mut frame = String::with_capacity(ITEM_NAME_VIEW_CHARS * 3);
-        for offset in 0..ITEM_NAME_VIEW_CHARS {
-            let idx = (start + offset) % source_len;
-            frame.push(source[idx]);
-        }
-        frames.push(frame);
-    }
-
-    set_label_text_with_font(label, &frames[0]);
-
-    let weak_label = label.downgrade();
-    let mut frame_idx = 1usize;
-    glib::timeout_add_local(Duration::from_millis(ITEM_NAME_SCROLL_INTERVAL_MS), move || {
-        let Some(label) = weak_label.upgrade() else {
-            return glib::ControlFlow::Break;
-        };
-
-        set_label_text_with_font(&label, &frames[frame_idx]);
-        frame_idx = (frame_idx + 1) % frames.len();
-        glib::ControlFlow::Continue
-    });
 }
 
 fn set_label_text_with_font(label: &Label, text: &str) {
