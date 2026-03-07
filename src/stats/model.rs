@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ===== 宠物状态分类 =====
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +26,68 @@ pub enum PetRuntimeState {
     Nomal,
 }
 
+// ===== 背包物品条目 =====
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct InventoryItem {
+    pub item_id: String,
+    pub count: u32,
+}
+
+// ===== 背包 =====
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct Inventory {
+    pub items: HashMap<String, u32>, // item_id -> count
+}
+
+impl Default for Inventory {
+    fn default() -> Self {
+        Self {
+            items: HashMap::new(),
+        }
+    }
+}
+
+impl Inventory {
+    pub fn add(&mut self, item_id: &str, count: u32) {
+        let entry = self.items.entry(item_id.to_string()).or_insert(0);
+        *entry = entry.saturating_add(count);
+    }
+
+    pub fn remove(&mut self, item_id: &str, count: u32) -> bool {
+        if let Some(&current) = self.items.get(item_id) {
+            if current >= count {
+                if current == count {
+                    self.items.remove(item_id);
+                } else {
+                    self.items.insert(item_id.to_string(), current - count);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get(&self, item_id: &str) -> u32 {
+        self.items.get(item_id).copied().unwrap_or(0)
+    }
+
+    pub fn list_items(&self) -> Vec<(String, u32)> {
+        self.items
+            .iter()
+            .map(|(id, count)| (id.clone(), *count))
+            .collect()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.items.clear();
+    }
+}
+
 // ===== 宠物核心数值模型 =====
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
@@ -42,6 +105,7 @@ pub struct PetStats {
     pub level_stage: u32,
     pub exp: f64,
     pub money: u64,
+    pub inventory: Inventory,
 }
 
 impl Default for PetStats {
@@ -66,6 +130,7 @@ impl Default for PetStats {
             level_stage,
             exp: 0.0,
             money: 1000,
+            inventory: Inventory::default(),
         }
     }
 }

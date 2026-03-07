@@ -3,7 +3,7 @@ use gtk4::{
     Align, Application, ApplicationWindow, Box, Button, CssProvider, FlowBox, Image, Label,
     Orientation, ScrolledWindow, SelectionMode, Window, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -38,16 +38,18 @@ pub enum FeedCategory {
     Gift,
     Drug,
     Functional,
+    Inventory,
 }
 
 impl FeedCategory {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Meal,
         Self::Drink,
         Self::Snack,
         Self::Gift,
         Self::Drug,
         Self::Functional,
+        Self::Inventory,
     ];
 
     fn all() -> &'static [Self] {
@@ -62,6 +64,7 @@ impl FeedCategory {
             "礼物" => Some(Self::Gift),
             "药物" => Some(Self::Drug),
             "功能" => Some(Self::Functional),
+            "背包" => Some(Self::Inventory),
             _ => None,
         }
     }
@@ -74,6 +77,7 @@ impl FeedCategory {
             Self::Gift => "礼物",
             Self::Drug => "药物",
             Self::Functional => "功能",
+            Self::Inventory => "背包",
         }
     }
 
@@ -85,6 +89,7 @@ impl FeedCategory {
             Self::Gift => "礼物面板",
             Self::Drug => "药物面板",
             Self::Functional => "功能面板",
+            Self::Inventory => "背包",
         }
     }
 
@@ -96,6 +101,7 @@ impl FeedCategory {
             Self::Gift => "assets/image/food/gift",
             Self::Drug => "assets/image/food/drug",
             Self::Functional => "assets/image/food/functional",
+            Self::Inventory => "assets/image/Item",
         }
     }
 
@@ -111,6 +117,7 @@ impl FeedCategory {
             Self::Gift => &["assets/Instruct/gift.lps", "assets/Instruct/timelimit.lps"],
             Self::Drug => &["assets/Instruct/drug.lps"],
             Self::Functional => &["assets/Instruct/food.lps", "assets/Instruct/timelimit.lps"],
+            Self::Inventory => &[],
         }
     }
 
@@ -122,7 +129,12 @@ impl FeedCategory {
             Self::Gift => "Gift",
             Self::Drug => "Drug",
             Self::Functional => "Functional",
+            Self::Inventory => "Inventory",
         }
+    }
+
+    pub fn is_inventory(&self) -> bool {
+        *self == Self::Inventory
     }
 }
 
@@ -135,6 +147,10 @@ pub struct FeedPanel {
     stats_service: PetStatsService,
     on_after_use: Rc<dyn Fn()>,
     category_buttons: HashMap<FeedCategory, Button>,
+    selected_items: Rc<RefCell<Vec<ItemDef>>>,
+    buy_button: Button,
+    buy_and_use_button: Button,
+    action_buttons_box: Box,
 }
 
 impl FeedPanel {
@@ -251,11 +267,23 @@ impl FeedPanel {
         panel_box.append(&content_row);
 
 
+        let action_buttons_box = Box::new(Orientation::Horizontal, 8);
+        action_buttons_box.set_halign(Align::Start);
+        let buy_button = Button::with_label("购买");
+        let buy_and_use_button = Button::with_label("购买并使用");
+        action_buttons_box.append(&buy_button);
+        action_buttons_box.append(&buy_and_use_button);
+        
         let actions_box = Box::new(Orientation::Horizontal, 8);
         actions_box.set_halign(Align::End);
         let close_button = Button::with_label("退出");
         actions_box.append(&close_button);
-        panel_box.append(&actions_box);
+        
+        let bottom_box = Box::new(Orientation::Horizontal, 8);
+        bottom_box.set_hexpand(true);
+        bottom_box.append(&action_buttons_box);
+        bottom_box.append(&actions_box);
+        panel_box.append(&bottom_box);
 
         window.set_child(Some(&panel_box));
 
@@ -283,9 +311,14 @@ impl FeedPanel {
             stats_service,
             on_after_use,
             category_buttons,
+            selected_items: Rc::new(RefCell::new(Vec::new())),
+            buy_button,
+            buy_and_use_button,
+            action_buttons_box,
         };
 
         panel.connect_sidebar_handlers();
+        panel.connect_action_buttons();
         panel.switch_category(category);
 
         panel
@@ -309,7 +342,16 @@ impl FeedPanel {
         self.current_category.set(category);
         self.window.set_title(Some(category.panel_title()));
         self.title.set_text(category.panel_title());
-        self.status_label.set_text("点击物品可立即生效");
+        self.selected_items.borrow_mut().clear();
+        
+        if category.is_inventory() {
+            self.status_label.set_text("双击物品可使用");
+            self.action_buttons_box.set_visible(false);
+        } else {
+            self.status_label.set_text("单击物品可选中、查看或购买");
+            self.action_buttons_box.set_visible(true);
+        }
+        
         self.refresh_sidebar_state();
         self.reload_items_for(category);
     }
@@ -330,6 +372,64 @@ impl FeedPanel {
         }
     }
 
+    fn connect_action_buttons(&self) {
+        let panel_buy = self.clone_ref();
+        self.buy_button.connect_clicked(move |_| {
+            let items = panel_buy.selected_items.borrow().clone();
+            if items.is_empty() {
+                panel_buy.status_label.set_text("请先选中物品");
+                return;
+            }
+            let mut service = panel_buy.stats_service.clone();
+            let mut bought = Vec::new();
+            let mut failed = Vec::new();
+            for item in &items {
+                if service.buy_and_add_to_inventory(item) {
+                    bought.push(item.id.clone());
+                } else {
+                    failed.push(format!("{} 需要 {}", item.id, item.price));
+                }
+            }
+            if !failed.is_empty() {
+                panel_buy.status_label.set_text(&format!("金钱不足：{}", failed.join("、")));
+            } else {
+                panel_buy.status_label.set_text(&format!("已购买放入背包：{}", bought.join("、")));
+            }
+        });
+
+        let panel_use = self.clone_ref();
+        self.buy_and_use_button.connect_clicked(move |_| {
+            let items = panel_use.selected_items.borrow().clone();
+            if items.is_empty() {
+                panel_use.status_label.set_text("请先选中物品");
+                return;
+            }
+            let mut service = panel_use.stats_service.clone();
+            let mut results = Vec::new();
+            let mut any_used = false;
+            for item in &items {
+                // 优先从背包使用，如果没有则直接购买使用
+                if service.get_inventory_count(&item.id) > 0 {
+                    if service.use_from_inventory(item) {
+                        results.push(format!("{}（背包）", item.id));
+                        any_used = true;
+                    }
+                } else {
+                    if service.on_use_item(item) {
+                        results.push(format!("{}（购买）", item.id));
+                        any_used = true;
+                    } else {
+                        results.push(format!("{}×金钱不足", item.id));
+                    }
+                }
+            }
+            panel_use.status_label.set_text(&format!("已使用：{}", results.join("、")));
+            if any_used {
+                (panel_use.on_after_use)();
+            }
+        });
+    }
+
     fn refresh_sidebar_state(&self) {
         let current = self.current_category.get();
         for side_category in FeedCategory::all() {
@@ -348,6 +448,14 @@ impl FeedPanel {
             self.flow.remove(&child);
         }
 
+        if category.is_inventory() {
+            self.load_inventory_items();
+        } else {
+            self.load_shop_items(category);
+        }
+    }
+
+    fn load_shop_items(&self, category: FeedCategory) {
         let image_paths = list_png_files(category.image_dir());
         let item_map = load_items(category);
 
@@ -363,10 +471,42 @@ impl FeedPanel {
                 path,
                 &item_map,
                 self.stats_service.clone(),
-                self.on_after_use.clone(),
+                self.selected_items.clone(),
                 &self.status_label,
             );
             self.flow.insert(&cell, -1);
+        }
+    }
+
+    fn load_inventory_items(&self) {
+        let inventory = self.stats_service.list_inventory();
+        let all_items = load_all_items();
+
+        if inventory.is_empty() {
+            let empty = Label::new(Some("背包为空"));
+            empty.set_halign(Align::Center);
+            self.flow.insert(&empty, -1);
+            return;
+        }
+
+        // 热加载回调：用完物品后立即刷新背包界面
+        let panel_for_refresh = self.clone_ref();
+        let on_refresh: Rc<dyn Fn()> = Rc::new(move || {
+            panel_for_refresh.reload_items_for(FeedCategory::Inventory);
+        });
+
+        for (item_id, count) in inventory {
+            if let Some(item_def) = all_items.get(&item_id) {
+                let cell = build_inventory_item_cell(
+                    item_def,
+                    count,
+                    self.stats_service.clone(),
+                    self.on_after_use.clone(),
+                    on_refresh.clone(),
+                    &self.status_label,
+                );
+                self.flow.insert(&cell, -1);
+            }
         }
     }
 
@@ -380,6 +520,10 @@ impl FeedPanel {
             stats_service: self.stats_service.clone(),
             on_after_use: self.on_after_use.clone(),
             category_buttons: self.category_buttons.clone(),
+            selected_items: self.selected_items.clone(),
+            buy_button: self.buy_button.clone(),
+            buy_and_use_button: self.buy_and_use_button.clone(),
+            action_buttons_box: self.action_buttons_box.clone(),
         }
     }
 }
@@ -411,8 +555,8 @@ fn list_png_files(dir: &str) -> Vec<String> {
 fn build_item_cell(
     path: &str,
     item_map: &HashMap<String, ItemDef>,
-    stats_service: PetStatsService,
-    on_after_use: Rc<dyn Fn()>,
+    _stats_service: PetStatsService,
+    selected_items: Rc<RefCell<Vec<ItemDef>>>,
     status_label: &Label,
 ) -> Button {
     let button = Button::new();
@@ -461,13 +605,39 @@ fn build_item_cell(
 
     if let Some(item_def) = item_map.get(&filename).cloned() {
         let status_label = status_label.clone();
-        button.connect_clicked(move |_| {
-            let mut service = stats_service.clone();
-            if service.on_use_item(&item_def) {
-                status_label.set_text(&format!("已使用：{}", item_def.id));
-                on_after_use();
+        let selected_items_cb = selected_items.clone();
+        let is_selected = Rc::new(Cell::new(false));
+        
+        button.connect_clicked(move |btn| {
+            {
+                let mut selected = selected_items_cb.borrow_mut();
+                if is_selected.get() {
+                    // 再次点击 → 取消选中
+                    is_selected.set(false);
+                    btn.remove_css_class("suggested-action");
+                    selected.retain(|i| i.id != item_def.id);
+                } else {
+                    // 首次点击 → 选中（多选）
+                    is_selected.set(true);
+                    btn.add_css_class("suggested-action");
+                    selected.push(item_def.clone());
+                }
+            }
+            // 更新状态栏
+            let selected = selected_items_cb.borrow();
+            if selected.is_empty() {
+                status_label.set_text("单击物品可选中、查看或购买");
+            } else if selected.len() == 1 {
+                status_label.set_text(&format!(
+                    "已选中：{} - 价格: {}",
+                    selected[0].id, selected[0].price
+                ));
             } else {
-                status_label.set_text(&format!("金钱不足：{} 需要 {}", item_def.id, item_def.price));
+                let total: u32 = selected.iter().map(|i| i.price).sum();
+                status_label.set_text(&format!(
+                    "已选中 {} 件 - 总价: {}",
+                    selected.len(), total
+                ));
             }
         });
     } else {
@@ -477,6 +647,109 @@ fn build_item_cell(
             status_label.set_text(&format!("未在配置中找到：{}", item_name));
         });
     }
+
+    button
+}
+
+fn build_inventory_item_cell(
+    item_def: &ItemDef,
+    count: u32,
+    stats_service: PetStatsService,
+    on_after_use: Rc<dyn Fn()>,
+    on_refresh: Rc<dyn Fn()>,
+    status_label: &Label,
+) -> Button {
+    let button = Button::new();
+    button.add_css_class("feed-item-cell");
+    button.set_width_request(ITEM_CELL_WIDTH);
+    button.set_height_request(ITEM_CELL_HEIGHT);
+    button.set_hexpand(false);
+    button.set_vexpand(false);
+    button.set_halign(Align::Center);
+    button.set_valign(Align::Start);
+
+    let content = Box::new(Orientation::Vertical, 4);
+    content.set_width_request(ITEM_CELL_WIDTH);
+    content.set_height_request(ITEM_CELL_HEIGHT);
+    content.set_halign(Align::Center);
+    content.set_valign(Align::Center);
+
+    // 根据物品 kind 确定所属分类图片目录，加载图片
+    let image_dir = image_dir_for_kind(item_def.kind);
+    let image_path = format!("{}/{}.png", image_dir, item_def.id);
+    if Path::new(&image_path).exists() {
+        let image = Image::from_file(&image_path);
+        image.set_pixel_size(THUMBNAIL_SIZE);
+        image.set_halign(Align::Center);
+        content.append(&image);
+    } else {
+        let placeholder = Label::new(Some("?"));
+        placeholder.set_size_request(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+        placeholder.set_halign(Align::Center);
+        placeholder.set_valign(Align::Center);
+        content.append(&placeholder);
+    }
+
+    // 显示物品名称和数量
+    let name_viewport = Box::new(Orientation::Horizontal, 0);
+    name_viewport.set_width_request(ITEM_NAME_VIEWPORT_WIDTH);
+    name_viewport.set_height_request(ITEM_NAME_VIEWPORT_HEIGHT);
+    name_viewport.set_halign(Align::Center);
+    name_viewport.set_valign(Align::Center);
+    let name_label = Label::new(None);
+    name_label.set_halign(Align::Center);
+    name_label.set_valign(Align::Center);
+    name_label.set_wrap(false);
+    name_label.set_single_line_mode(true);
+    name_label.set_tooltip_text(Some(&item_def.id));
+    {
+        let font_size = ITEM_NAME_FONT_PT * gtk4::pango::SCALE;
+        let escaped = glib::markup_escape_text(&item_def.id);
+        name_label.set_markup(&format!(
+            "<span size=\"{}\">{} x{}</span>",
+            font_size, escaped, count
+        ));
+    }
+    name_viewport.append(&name_label);
+    content.append(&name_viewport);
+
+    button.set_child(Some(&content));
+
+    let item_def_click = item_def.clone();
+    let status_label = status_label.clone();
+    let click_count = Rc::new(Cell::new(0));
+    let click_time = Rc::new(Cell::new(std::time::Instant::now()));
+
+    button.connect_clicked({
+        let click_count = click_count.clone();
+        let click_time = click_time.clone();
+        let item_for_click = item_def_click.clone();
+        
+        move |_| {
+            let now = std::time::Instant::now();
+            let elapsed = now.duration_since(click_time.get()).as_millis();
+            
+            if elapsed < 300 {
+                click_count.set(click_count.get() + 1);
+                if click_count.get() >= 2 {
+                    // 双击：使用物品
+                    let mut service = stats_service.clone();
+                    if service.use_from_inventory(&item_for_click) {
+                        status_label.set_text(&format!("已使用：{}", item_for_click.id));
+                        on_after_use();
+                        // 热加载：用完后立即刷新背包界面（数量减少或消失）
+                        on_refresh();
+                    } else {
+                        status_label.set_text(&format!("背包中已无：{}", item_for_click.id));
+                    }
+                    click_count.set(0);
+                }
+            } else {
+                click_count.set(1);
+            }
+            click_time.set(now);
+        }
+    });
 
     button
 }
@@ -569,4 +842,29 @@ fn parse_num(fields: &HashMap<String, String>, key: &str) -> f64 {
         .get(key)
         .and_then(|value| value.parse::<f64>().ok())
         .unwrap_or(0.0)
+}
+
+fn load_all_items() -> HashMap<String, ItemDef> {
+    let mut all_items = HashMap::new();
+    
+    // 加载所有非库存分类的物品
+    for category in FeedCategory::all() {
+        if !category.is_inventory() {
+            let items = load_items(*category);
+            all_items.extend(items);
+        }
+    }
+    
+    all_items
+}
+
+fn image_dir_for_kind(kind: ItemKind) -> &'static str {
+    match kind {
+        ItemKind::Staple => "assets/image/food/meal",
+        ItemKind::Drink => "assets/image/food/drink",
+        ItemKind::Snack => "assets/image/food/snack",
+        ItemKind::Gift => "assets/image/food/gift",
+        ItemKind::Drug => "assets/image/food/drug",
+        ItemKind::Functional => "assets/image/food/functional",
+    }
 }

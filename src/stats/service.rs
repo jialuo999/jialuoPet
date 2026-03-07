@@ -486,3 +486,62 @@ fn random_binary_f64() -> f64 {
         0.0
     }
 }
+
+// ===== 背包系统方法 =====
+impl PetStatsService {
+    /// 购买物品并放入背包
+    pub fn buy_and_add_to_inventory(&mut self, item: &ItemDef) -> bool {
+        {
+            let mut stats = self.stats.borrow_mut();
+            if stats.money < item.price as u64 {
+                return false;
+            }
+            stats.money -= item.price as u64;
+            stats.inventory.add(&item.id, 1);
+        }
+        true
+    }
+
+    /// 从背包中使用物品（不需要付费）
+    pub fn use_from_inventory(&mut self, item: &ItemDef) -> bool {
+        {
+            let mut stats = self.stats.borrow_mut();
+            if !stats.inventory.remove(&item.id, 1) {
+                return false;
+            }
+        }
+
+        self.apply_likability_gain(item.effects.likability);
+        self.apply_feeling_gain(item.effects.mood);
+
+        {
+            let mut stats = self.stats.borrow_mut();
+            stats.strength_food += item.effects.satiety;
+            stats.strength_drink += item.effects.thirst;
+            stats.strength += item.effects.stamina;
+            stats.health += item.effects.health;
+            stats.exp += item.effects.exp;
+
+            clamp_stats(&mut stats);
+            apply_level_up_if_needed(&mut stats);
+            clamp_stats(&mut stats);
+        }
+
+        true
+    }
+
+    /// 获取背包中指定物品的数量
+    pub fn get_inventory_count(&self, item_id: &str) -> u32 {
+        self.stats.borrow().inventory.get(item_id)
+    }
+
+    /// 列出背包中的所有物品
+    pub fn list_inventory(&self) -> Vec<(String, u32)> {
+        self.stats.borrow().inventory.list_items()
+    }
+
+    /// 清空背包
+    pub fn clear_inventory(&mut self) {
+        self.stats.borrow_mut().inventory.clear();
+    }
+}
