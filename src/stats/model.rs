@@ -27,6 +27,7 @@ pub enum PetRuntimeState {
 }
 
 // ===== 背包物品条目 =====
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct InventoryItem {
     pub item_id: String,
@@ -79,10 +80,12 @@ impl Inventory {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.items.clear();
     }

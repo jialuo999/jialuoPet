@@ -181,9 +181,7 @@ impl FeedPanel {
                  .feed-item-cell:active,\n\
                  .feed-item-cell:checked {{\n\
                     min-width: {}px;\n\
-                    max-width: {}px;\n\
                     min-height: {}px;\n\
-                    max-height: {}px;\n\
                     padding: 0;\n\
                     margin: 0;\n\
                 }}\n\
@@ -192,15 +190,11 @@ impl FeedPanel {
                 .feed-sidebar-button:active,\n\
                 .feed-sidebar-button:checked {{\n\
                     min-width: {}px;\n\
-                    max-width: {}px;\n\
                     padding-left: 2px;\n\
                     padding-right: 2px;\n\
                 }}",
                 ITEM_CELL_WIDTH,
-                ITEM_CELL_WIDTH,
                 ITEM_CELL_HEIGHT,
-                ITEM_CELL_HEIGHT,
-                SIDEBAR_WIDTH,
                 SIDEBAR_WIDTH
             ),
         );

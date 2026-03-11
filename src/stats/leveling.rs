@@ -53,6 +53,7 @@ pub fn recalc_caps(state: &mut PetLevelState) {
 }
 
 /// 根据等级和阶段计算好感度上限
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn likability_max_from_level_state(level: u32, level_max: u32) -> f64 {
     if level_max == 0 {
         return 100.0 + (level.saturating_sub(1) as f64) * 10.0;

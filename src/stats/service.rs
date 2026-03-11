@@ -87,6 +87,7 @@ impl PetStatsService {
         self.stats.borrow().clone()
     }
 
+    #[allow(dead_code)]
     pub fn replace_stats(&self, next_stats: PetStats) {
         *self.stats.borrow_mut() = next_stats;
     }
@@ -541,6 +542,7 @@ impl PetStatsService {
     }
 
     /// 清空背包
+    #[allow(dead_code)]
     pub fn clear_inventory(&mut self) {
         self.stats.borrow_mut().inventory.clear();
     }
