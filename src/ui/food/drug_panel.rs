@@ -1,7 +1,8 @@
 use gtk4::prelude::*;
 use gtk4::{
     Align, Application, ApplicationWindow, Box, Button, CssProvider, FlowBox, Image, Label,
-    Orientation, ScrolledWindow, SelectionMode, Window, STYLE_PROVIDER_PRIORITY_APPLICATION,
+    MenuButton, Orientation, Overlay, Popover, ScrolledWindow, SelectionMode, Window,
+    STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -462,6 +463,7 @@ impl FeedPanel {
     fn load_shop_items(&self, category: FeedCategory) {
         let image_paths = list_png_files(category.image_dir());
         let item_map = load_items(category);
+        let desc_map = load_item_descs(category);
 
         if image_paths.is_empty() {
             let empty = Label::new(Some("未找到图片资源"));
@@ -474,6 +476,7 @@ impl FeedPanel {
             let cell = build_item_cell(
                 path,
                 &item_map,
+                &desc_map,
                 self.stats_service.clone(),
                 self.selected_items.clone(),
                 &self.status_label,
@@ -485,6 +488,7 @@ impl FeedPanel {
     fn load_inventory_items(&self) {
         let inventory = self.stats_service.list_inventory();
         let all_items = load_all_items();
+        let all_descs = load_all_item_descs();
 
         if inventory.is_empty() {
             let empty = Label::new(Some("背包为空"));
@@ -504,6 +508,7 @@ impl FeedPanel {
                 let cell = build_inventory_item_cell(
                     item_def,
                     count,
+                    all_descs.get(&item_id).cloned(),
                     self.stats_service.clone(),
                     self.on_after_use.clone(),
                     on_refresh.clone(),
@@ -559,10 +564,11 @@ fn list_png_files(dir: &str) -> Vec<String> {
 fn build_item_cell(
     path: &str,
     item_map: &HashMap<String, ItemDef>,
+    desc_map: &HashMap<String, String>,
     _stats_service: PetStatsService,
     selected_items: Rc<RefCell<Vec<ItemDef>>>,
     status_label: &Label,
-) -> Button {
+) -> Overlay {
     let button = Button::new();
     button.add_css_class("feed-item-cell");
     button.set_width_request(ITEM_CELL_WIDTH);
@@ -606,6 +612,29 @@ fn build_item_cell(
     content.append(&name_viewport);
 
     button.set_child(Some(&content));
+
+    let info_details = if let Some(def) = item_map.get(&filename) {
+        format!(
+            "{}\n{}\n{}",
+            def.id,
+            format!("{} 金币", def.price),
+            format_item_effects(&def.effects)
+        )
+    } else {
+        format!("{}\n未在配置中找到该物品。", filename)
+    };
+
+    let overlay = Overlay::new();
+    overlay.set_width_request(ITEM_CELL_WIDTH);
+    overlay.set_height_request(ITEM_CELL_HEIGHT);
+    overlay.set_halign(Align::Center);
+    overlay.set_valign(Align::Start);
+    overlay.set_child(Some(&button));
+    let desc = desc_map
+        .get(&filename)
+        .map(String::as_str)
+        .unwrap_or("未找到描述");
+    overlay.add_overlay(&build_cell_info_button("道具信息", &info_details, desc));
 
     if let Some(item_def) = item_map.get(&filename).cloned() {
         let status_label = status_label.clone();
@@ -652,17 +681,18 @@ fn build_item_cell(
         });
     }
 
-    button
+    overlay
 }
 
 fn build_inventory_item_cell(
     item_def: &ItemDef,
     count: u32,
+    desc: Option<String>,
     stats_service: PetStatsService,
     on_after_use: Rc<dyn Fn()>,
     on_refresh: Rc<dyn Fn()>,
     status_label: &Label,
-) -> Button {
+) -> Overlay {
     let button = Button::new();
     button.add_css_class("feed-item-cell");
     button.set_width_request(ITEM_CELL_WIDTH);
@@ -719,6 +749,25 @@ fn build_inventory_item_cell(
 
     button.set_child(Some(&content));
 
+    let info_details = format!(
+        "{}\n拥有 x{}\n{}\n双击可使用",
+        item_def.id,
+        count,
+        format_item_effects(&item_def.effects)
+    );
+
+    let overlay = Overlay::new();
+    overlay.set_width_request(ITEM_CELL_WIDTH);
+    overlay.set_height_request(ITEM_CELL_HEIGHT);
+    overlay.set_halign(Align::Center);
+    overlay.set_valign(Align::Start);
+    overlay.set_child(Some(&button));
+    overlay.add_overlay(&build_cell_info_button(
+        "道具信息",
+        &info_details,
+        desc.as_deref().unwrap_or("未找到描述"),
+    ));
+
     let item_def_click = item_def.clone();
     let status_label = status_label.clone();
     let click_count = Rc::new(Cell::new(0));
@@ -755,7 +804,80 @@ fn build_inventory_item_cell(
         }
     });
 
-    button
+    overlay
+}
+
+fn build_cell_info_button(title: &str, details: &str, desc_text: &str) -> MenuButton {
+    let info_button = MenuButton::new();
+    info_button.add_css_class("flat");
+    info_button.set_has_frame(false);
+    info_button.set_halign(Align::End);
+    info_button.set_valign(Align::Start);
+    info_button.set_margin_top(1);
+    info_button.set_margin_end(1);
+    info_button.set_tooltip_text(Some("查看详情"));
+
+    info_button.set_icon_name("dialog-information-symbolic");
+
+    let popover = Popover::new();
+    let popover_content = Box::new(Orientation::Vertical, 4);
+    popover_content.set_margin_top(8);
+    popover_content.set_margin_bottom(8);
+    popover_content.set_margin_start(10);
+    popover_content.set_margin_end(10);
+
+    let title_label = Label::new(Some(title));
+    title_label.set_halign(Align::Start);
+    title_label.add_css_class("heading");
+    popover_content.append(&title_label);
+
+    let detail_label = Label::new(Some(details));
+    detail_label.set_halign(Align::Start);
+    detail_label.set_wrap(true);
+    detail_label.set_xalign(0.0);
+    popover_content.append(&detail_label);
+
+    let desc_label = Label::new(Some(desc_text));
+    desc_label.set_halign(Align::Start);
+    desc_label.set_wrap(true);
+    desc_label.set_xalign(0.0);
+    popover_content.append(&desc_label);
+
+    popover.set_child(Some(&popover_content));
+    info_button.set_popover(Some(&popover));
+    info_button
+}
+
+fn format_item_effects(effects: &ItemEffects) -> String {
+    let mut parts = Vec::new();
+
+    if effects.satiety != 0.0 {
+        parts.push(format!("饱食度 {:+.1}", effects.satiety));
+    }
+    if effects.mood != 0.0 {
+        parts.push(format!("心情 {:+.1}", effects.mood));
+    }
+    if effects.thirst != 0.0 {
+        parts.push(format!("口渴 {:+.1}", effects.thirst));
+    }
+    if effects.health != 0.0 {
+        parts.push(format!("健康 {:+.1}", effects.health));
+    }
+    if effects.likability != 0.0 {
+        parts.push(format!("好感 {:+.1}", effects.likability));
+    }
+    if effects.stamina != 0.0 {
+        parts.push(format!("体力 {:+.1}", effects.stamina));
+    }
+    if effects.exp != 0.0 {
+        parts.push(format!("经验 {:+.1}", effects.exp));
+    }
+
+    if parts.is_empty() {
+        "无".to_string()
+    } else {
+        parts.join("，")
+    }
 }
 
 fn load_items(category: FeedCategory) -> HashMap<String, ItemDef> {
@@ -782,6 +904,40 @@ fn load_items(category: FeedCategory) -> HashMap<String, ItemDef> {
     items
 }
 
+fn load_item_descs(category: FeedCategory) -> HashMap<String, String> {
+    let mut descs = HashMap::new();
+    let type_filter = category.type_filter();
+
+    for file in category.instruct_files() {
+        let Ok(content) = fs::read_to_string(file) else {
+            continue;
+        };
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            let Some(start) = trimmed.find("food:") else {
+                continue;
+            };
+            let normalized = &trimmed[start..];
+            if let Some((name, desc)) = parse_item_desc_line(normalized, type_filter) {
+                descs.insert(name, desc);
+            }
+        }
+    }
+
+    descs
+}
+
+fn load_all_item_descs() -> HashMap<String, String> {
+    let mut all_descs = HashMap::new();
+    for category in FeedCategory::all() {
+        if !category.is_inventory() {
+            all_descs.extend(load_item_descs(*category));
+        }
+    }
+    all_descs
+}
+
 fn set_label_text_with_font(label: &Label, text: &str) {
     let font_size = ITEM_NAME_FONT_PT * gtk4::pango::SCALE;
     let escaped_text = glib::markup_escape_text(text);
@@ -789,19 +945,7 @@ fn set_label_text_with_font(label: &Label, text: &str) {
 }
 
 fn parse_item_line(line: &str, type_filter: &str) -> Option<ItemDef> {
-    let mut fields: HashMap<String, String> = HashMap::new();
-    for part in line.split('|') {
-        let piece = part.trim();
-        if let Some((key, value)) = piece.split_once('#') {
-            let key = key.trim();
-            if key.is_empty() {
-                continue;
-            }
-
-            let value = value.trim_end_matches(':').trim();
-            fields.insert(key.to_string(), value.to_string());
-        }
-    }
+    let fields = parse_fields(line);
 
     let item_type = fields.get("type")?.trim();
     if item_type != type_filter {
@@ -827,6 +971,41 @@ fn parse_item_line(line: &str, type_filter: &str) -> Option<ItemDef> {
         stack_limit: 99,
         effects,
     })
+}
+
+fn parse_item_desc_line(line: &str, type_filter: &str) -> Option<(String, String)> {
+    let fields = parse_fields(line);
+
+    let item_type = fields.get("type")?.trim();
+    if item_type != type_filter {
+        return None;
+    }
+
+    let name = fields.get("name")?.trim().to_string();
+    let desc = fields
+        .get("desc")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "未填写描述".to_string());
+
+    Some((name, desc))
+}
+
+fn parse_fields(line: &str) -> HashMap<String, String> {
+    let mut fields: HashMap<String, String> = HashMap::new();
+    for part in line.split('|') {
+        let piece = part.trim();
+        if let Some((key, value)) = piece.split_once('#') {
+            let key = key.trim();
+            if key.is_empty() {
+                continue;
+            }
+
+            let value = value.trim_end_matches(':').trim();
+            fields.insert(key.to_string(), value.to_string());
+        }
+    }
+    fields
 }
 
 fn parse_kind(kind: &str) -> ItemKind {
