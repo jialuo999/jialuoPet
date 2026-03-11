@@ -262,21 +262,18 @@ impl FeedPanel {
 
 
         let action_buttons_box = Box::new(Orientation::Horizontal, 8);
-        action_buttons_box.set_halign(Align::Start);
         let buy_button = Button::with_label("购买");
         let buy_and_use_button = Button::with_label("购买并使用");
         action_buttons_box.append(&buy_button);
         action_buttons_box.append(&buy_and_use_button);
-        
-        let actions_box = Box::new(Orientation::Horizontal, 8);
-        actions_box.set_halign(Align::End);
+
         let close_button = Button::with_label("退出");
-        actions_box.append(&close_button);
-        
+
         let bottom_box = Box::new(Orientation::Horizontal, 8);
         bottom_box.set_hexpand(true);
+        bottom_box.set_halign(Align::End);
         bottom_box.append(&action_buttons_box);
-        bottom_box.append(&actions_box);
+        bottom_box.append(&close_button);
         panel_box.append(&bottom_box);
 
         window.set_child(Some(&panel_box));

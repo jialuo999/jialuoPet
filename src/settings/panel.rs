@@ -29,7 +29,7 @@ impl SettingsPanel {
             .title("设置")
             .default_width(380)
             .default_height(220)
-            .resizable(false)
+            .resizable(true)
             .build();
         window.set_transient_for(Some(parent_window));
 
@@ -38,7 +38,8 @@ impl SettingsPanel {
         panel_box.set_margin_bottom(12);
         panel_box.set_margin_start(12);
         panel_box.set_margin_end(12);
-        panel_box.set_width_request(340);
+        panel_box.set_hexpand(true);
+        panel_box.set_vexpand(true);
 
         let title = Label::new(Some("设置"));
         title.set_halign(Align::Start);
