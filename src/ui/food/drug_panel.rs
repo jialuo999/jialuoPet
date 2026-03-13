@@ -24,7 +24,7 @@ const ITEM_NAME_FONT_PT: i32 = 9;
 const ITEM_NAME_VIEWPORT_WIDTH: i32 = 72;
 const ITEM_NAME_VIEWPORT_HEIGHT: i32 = 18;
 const SIDEBAR_WIDTH: i32 = 28;
-const SIDEBAR_BUTTON_HEIGHT: i32 = 44;
+const SIDEBAR_BUTTON_HEIGHT: i32 = 40;
 const CONTENT_ROW_SPACING: i32 = 8;
 const FLOWBOX_COLUMN_SPACING: u32 = 3;
 const FLOWBOX_ROW_SPACING: u32 = 3;
@@ -231,8 +231,9 @@ impl FeedPanel {
         flow.set_column_spacing(FLOWBOX_COLUMN_SPACING);
         flow.set_row_spacing(FLOWBOX_ROW_SPACING);
         flow.set_selection_mode(SelectionMode::None);
-        // 固定 FlowBox 子项为统一网格尺寸，避免文本自然宽度影响每个单元格大小。
-        flow.set_homogeneous(true);
+        // 使用左对齐紧凑排布，避免横向均分导致的视觉留白。
+        flow.set_homogeneous(false);
+        flow.set_halign(Align::Start);
         flow.set_valign(Align::Start);
         flow.set_vexpand(false);
         flow.set_max_children_per_line(FLOWBOX_MAX_COLUMNS);
