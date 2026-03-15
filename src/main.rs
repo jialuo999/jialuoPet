@@ -35,8 +35,9 @@ use interaction::{
     setup_touch_click_regions,
 };
 use settings::{SettingsPanel, SettingsStore};
-use stats::{InteractType, PetStats, PetStatsSaveStore, PetStatsService};
+use stats::{PetStats, PetStatsSaveStore, PetStatsService};
 use ui::food::{FeedCategory, FeedPanel};
+use ui::interaction::{InteractCategory, InteractionPanel};
 use ui::stats::StatsPanel;
 use window::position::{apply_window_position, current_window_left_top};
 
@@ -152,6 +153,26 @@ fn build_ui(app: &Application) {
         on_after_feed_use,
     ));
 
+    let interaction_panel = Rc::new(InteractionPanel::new(
+        app,
+        &window,
+        InteractCategory::Study,
+        stats_service.clone(),
+        {
+            let stats_panel_for_interact = stats_panel.clone();
+            let stats_save_store_for_interact = stats_save_store.clone();
+            let stats_service_for_interact = stats_service.clone();
+            Rc::new(move || {
+                stats_panel_for_interact.refresh();
+                if let Err(err) =
+                    stats_save_store_for_interact.save_stats(&stats_service_for_interact.get_stats())
+                {
+                    eprintln!("互动后保存角色数值存档失败：{}", err);
+                }
+            })
+        },
+    ));
+
     // ===== 配置热更新监听：收到变更后刷新数值与动画配置 =====
     let (config_reload_tx, config_reload_rx) = mpsc::channel::<()>();
     if let Err(err) = start_panel_config_watcher(move || {
@@ -248,6 +269,8 @@ fn build_ui(app: &Application) {
         let stats_panel_for_menu_popup = stats_panel.clone();
         let feed_panel_for_menu = feed_panel.clone();
         let feed_panel_for_hide = feed_panel.clone();
+        let interaction_panel_for_menu = interaction_panel.clone();
+        let interaction_panel_for_hide = interaction_panel.clone();
         let settings_panel_for_menu_popup = {
             let settings_store = settings_store.clone();
             let window_for_save = window.clone();
@@ -374,27 +397,10 @@ fn build_ui(app: &Application) {
                 }
             }),
             {
-                let stats_panel_for_interact = stats_panel_for_menu_popup.clone();
-                let stats_service_for_interact = stats_service.clone();
-                let stats_save_store_for_interact = stats_save_store.clone();
+                let interaction_panel_for_menu = interaction_panel_for_menu.clone();
                 Rc::new(move |menu_label| {
-                    let interact_type = match menu_label {
-                        "学习" => Some(InteractType::Study),
-                        "工作" => Some(InteractType::Work),
-                        "玩耍" => Some(InteractType::Play),
-                        _ => None,
-                    };
-
-                    if let Some(interact_type) = interact_type {
-                        let mut stats_service_for_interact = stats_service_for_interact.clone();
-                        if stats_service_for_interact.on_interact(interact_type) {
-                            stats_panel_for_interact.refresh();
-                            if let Err(err) = stats_save_store_for_interact
-                                .save_stats(&stats_service_for_interact.get_stats())
-                            {
-                                eprintln!("互动后保存角色数值存档失败：{}", err);
-                            }
-                        }
+                    if let Some(category) = InteractCategory::from_menu_label(menu_label) {
+                        interaction_panel_for_menu.toggle_category(category);
                     }
                 })
             },
@@ -409,6 +415,7 @@ fn build_ui(app: &Application) {
                 Rc::new(move || {
                     stats_panel_for_menu_popup.hide();
                     feed_panel_for_hide.hide();
+                    interaction_panel_for_hide.hide();
                     settings_panel_for_menu_popup.hide();
                 })
             },
