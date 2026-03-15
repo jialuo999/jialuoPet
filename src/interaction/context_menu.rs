@@ -9,6 +9,7 @@ pub fn setup_context_menu(
     image: &Image,
     on_panel_clicked: Rc<dyn Fn(i32, i32)>,
     on_feed_panel_clicked: Rc<dyn Fn(&'static str)>,
+    on_interact_clicked: Rc<dyn Fn(&'static str)>,
     on_settings_clicked: Rc<dyn Fn()>,
     on_before_menu_popup: Rc<dyn Fn()>,
     on_restart_clicked: Rc<dyn Fn()>,
@@ -30,6 +31,11 @@ pub fn setup_context_menu(
     feed_popover.set_has_arrow(true);
     feed_popover.set_autohide(false);
     feed_popover.set_parent(image);
+
+    let interact_popover = Popover::new();
+    interact_popover.set_has_arrow(true);
+    interact_popover.set_autohide(false);
+    interact_popover.set_parent(image);
 
     let last_click_pos = Rc::new(RefCell::new((0i32, 0i32)));
 
@@ -104,6 +110,31 @@ pub fn setup_context_menu(
     }
     feed_popover.set_child(Some(&feed_box));
 
+    // 互动子菜单：学习/工作/玩耍
+    let interact_box = Box::new(Orientation::Vertical, 4);
+    for item in ["学习", "工作", "玩耍"] {
+        let button = Button::with_label(item);
+        button.set_halign(gtk4::Align::Fill);
+        let popover_for_click = popover.clone();
+        let system_popover_for_click = system_popover.clone();
+        let feed_popover_for_click = feed_popover.clone();
+        let interact_popover_for_click = interact_popover.clone();
+        let on_interact_clicked = on_interact_clicked.clone();
+        button.connect_clicked(move |_| {
+            popover_for_click.popdown();
+            system_popover_for_click.popdown();
+            feed_popover_for_click.popdown();
+            interact_popover_for_click.popdown();
+
+            let on_interact_clicked = on_interact_clicked.clone();
+            glib::idle_add_local_once(move || {
+                on_interact_clicked(item);
+            });
+        });
+        interact_box.append(&button);
+    }
+    interact_popover.set_child(Some(&interact_box));
+
     // 主菜单：投喂/面板/互动/系统（目前实现面板与系统）
     let menu_box = Box::new(Orientation::Vertical, 4);
     for item in ["投喂", "面板", "互动", "系统"] {
@@ -124,10 +155,12 @@ pub fn setup_context_menu(
         } else if item == "投喂" {
             let feed_popover_for_click = feed_popover.clone();
             let system_popover_for_click = system_popover.clone();
+            let interact_popover_for_click = interact_popover.clone();
             let last_click_pos = last_click_pos.clone();
             button.connect_clicked(move |_| {
                 let (x, y) = *last_click_pos.borrow();
                 system_popover_for_click.popdown();
+                interact_popover_for_click.popdown();
                 feed_popover_for_click
                     .set_pointing_to(Some(&gdk4::Rectangle::new(x, y, 1, 1)));
                 if feed_popover_for_click.is_visible() {
@@ -139,16 +172,35 @@ pub fn setup_context_menu(
         } else if item == "系统" {
             let system_popover_for_click = system_popover.clone();
             let feed_popover_for_click = feed_popover.clone();
+            let interact_popover_for_click = interact_popover.clone();
             let last_click_pos = last_click_pos.clone();
             button.connect_clicked(move |_| {
                 let (x, y) = *last_click_pos.borrow();
                 feed_popover_for_click.popdown();
+                interact_popover_for_click.popdown();
                 system_popover_for_click
                     .set_pointing_to(Some(&gdk4::Rectangle::new(x, y, 1, 1)));
                 if system_popover_for_click.is_visible() {
                     system_popover_for_click.popdown();
                 } else {
                     system_popover_for_click.popup();
+                }
+            });
+        } else if item == "互动" {
+            let system_popover_for_click = system_popover.clone();
+            let feed_popover_for_click = feed_popover.clone();
+            let interact_popover_for_click = interact_popover.clone();
+            let last_click_pos = last_click_pos.clone();
+            button.connect_clicked(move |_| {
+                let (x, y) = *last_click_pos.borrow();
+                feed_popover_for_click.popdown();
+                system_popover_for_click.popdown();
+                interact_popover_for_click
+                    .set_pointing_to(Some(&gdk4::Rectangle::new(x, y, 1, 1)));
+                if interact_popover_for_click.is_visible() {
+                    interact_popover_for_click.popdown();
+                } else {
+                    interact_popover_for_click.popup();
                 }
             });
         }
@@ -165,6 +217,7 @@ pub fn setup_context_menu(
         let on_before_menu_popup = on_before_menu_popup.clone();
         let system_popover = system_popover.clone();
         let feed_popover = feed_popover.clone();
+        let interact_popover = interact_popover.clone();
         let is_shutting_down = is_shutting_down.clone();
         right_click.connect_pressed(move |_, _, x, y| {
             if is_shutting_down() {
@@ -178,12 +231,14 @@ pub fn setup_context_menu(
                 popover.popdown();
                 system_popover.popdown();
                 feed_popover.popdown();
+                interact_popover.popdown();
                 return;
             }
 
             on_before_menu_popup();
             system_popover.popdown();
             feed_popover.popdown();
+            interact_popover.popdown();
             popover.set_pointing_to(Some(&gdk4::Rectangle::new(
                 xi,
                 yi,
@@ -202,6 +257,7 @@ pub fn setup_context_menu(
         let popover = popover.clone();
         let system_popover = system_popover.clone();
         let feed_popover = feed_popover.clone();
+        let interact_popover = interact_popover.clone();
         left_click.connect_pressed(move |_, _, _, _| {
             if popover.is_visible() {
                 popover.popdown();
@@ -211,6 +267,9 @@ pub fn setup_context_menu(
             }
             if feed_popover.is_visible() {
                 feed_popover.popdown();
+            }
+            if interact_popover.is_visible() {
+                interact_popover.popdown();
             }
         });
     }

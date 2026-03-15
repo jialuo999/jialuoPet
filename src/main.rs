@@ -35,7 +35,7 @@ use interaction::{
     setup_touch_click_regions,
 };
 use settings::{SettingsPanel, SettingsStore};
-use stats::{PetStats, PetStatsSaveStore, PetStatsService};
+use stats::{InteractType, PetStats, PetStatsSaveStore, PetStatsService};
 use ui::food::{FeedCategory, FeedPanel};
 use ui::stats::StatsPanel;
 use window::position::{apply_window_position, current_window_left_top};
@@ -373,6 +373,31 @@ fn build_ui(app: &Application) {
                     None => {}
                 }
             }),
+            {
+                let stats_panel_for_interact = stats_panel_for_menu_popup.clone();
+                let stats_service_for_interact = stats_service.clone();
+                let stats_save_store_for_interact = stats_save_store.clone();
+                Rc::new(move |menu_label| {
+                    let interact_type = match menu_label {
+                        "学习" => Some(InteractType::Study),
+                        "工作" => Some(InteractType::Work),
+                        "玩耍" => Some(InteractType::Play),
+                        _ => None,
+                    };
+
+                    if let Some(interact_type) = interact_type {
+                        let mut stats_service_for_interact = stats_service_for_interact.clone();
+                        if stats_service_for_interact.on_interact(interact_type) {
+                            stats_panel_for_interact.refresh();
+                            if let Err(err) = stats_save_store_for_interact
+                                .save_stats(&stats_service_for_interact.get_stats())
+                            {
+                                eprintln!("互动后保存角色数值存档失败：{}", err);
+                            }
+                        }
+                    }
+                })
+            },
             {
                 let settings_panel_for_menu_popup = settings_panel_for_menu_popup.clone();
                 Rc::new(move || {

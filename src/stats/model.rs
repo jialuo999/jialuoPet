@@ -16,6 +16,9 @@ pub enum InteractType {
     TouchHead,
     TouchBody,
     Pinch,
+    Study,
+    Work,
+    Play,
 }
 
 #[allow(dead_code)]
