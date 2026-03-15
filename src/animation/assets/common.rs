@@ -121,6 +121,61 @@ fn mode_keyword(mode: PetMode) -> &'static str {
     }
 }
 
+fn path_has_any_mode_keyword(path: &Path) -> bool {
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .map(|name| {
+                let lower = name.to_ascii_lowercase();
+                lower.contains("happy")
+                    || lower.contains("nomal")
+                    || lower.contains("poorcondition")
+                    || lower.contains("ill")
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn path_matches_mode(path: &Path, mode: PetMode) -> bool {
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .map(|name| dir_name_matches_mode(name, mode))
+            .unwrap_or(false)
+    })
+}
+
+fn select_mode_or_agnostic_paths(paths: &[PathBuf], mode: PetMode) -> Vec<PathBuf> {
+    paths
+        .iter()
+        .filter(|path| path_matches_mode(path, mode) || !path_has_any_mode_keyword(path))
+        .cloned()
+        .collect()
+}
+
+pub(crate) fn collect_png_files_recursive_for_mode(root: &Path, mode: PetMode) -> Vec<PathBuf> {
+    let all_files = collect_png_files_recursive_filtered(root, &[]).unwrap_or_default();
+    if all_files.is_empty() {
+        return Vec::new();
+    }
+
+    let mut selected = select_mode_or_agnostic_paths(&all_files, mode);
+    if selected.is_empty() && mode != PetMode::Nomal {
+        selected = select_mode_or_agnostic_paths(&all_files, PetMode::Nomal);
+    }
+    if selected.is_empty() && mode != PetMode::Happy {
+        selected = select_mode_or_agnostic_paths(&all_files, PetMode::Happy);
+    }
+
+    if selected.is_empty() {
+        all_files
+    } else {
+        selected
+    }
+}
+
 pub(crate) fn dir_name_matches_mode(dir_name: &str, mode: PetMode) -> bool {
     dir_name.to_ascii_lowercase().contains(mode_keyword(mode))
 }
@@ -210,7 +265,7 @@ pub(crate) fn collect_mode_variant_dirs(root: &Path, mode: PetMode) -> Vec<PathB
 }
 
 // ===== 分段帧加载（A/C/Single + fallback） =====
-fn path_matches_mode(path: &Path, mode: PetMode) -> bool {
+fn path_matches_mode_for_segment(path: &Path, mode: PetMode) -> bool {
     path.components().any(|component| {
         component
             .as_os_str()
@@ -235,24 +290,8 @@ fn component_matches_segment(name: &str, stage_prefix: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn path_has_any_mode_keyword(path: &Path) -> bool {
-    path.components().any(|component| {
-        component
-            .as_os_str()
-            .to_str()
-            .map(|name| {
-                let lower = name.to_ascii_lowercase();
-                lower.contains("happy")
-                    || lower.contains("nomal")
-                    || lower.contains("poorcondition")
-                    || lower.contains("ill")
-            })
-            .unwrap_or(false)
-    })
-}
-
 fn path_matches_mode_or_agnostic(path: &Path, mode: PetMode) -> bool {
-    path_matches_mode(path, mode) || !path_has_any_mode_keyword(path)
+    path_matches_mode_for_segment(path, mode) || !path_has_any_mode_keyword(path)
 }
 
 fn path_in_stage_branch(path: &Path, root: &Path, stage_prefix: &str) -> bool {

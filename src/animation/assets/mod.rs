@@ -10,7 +10,7 @@ mod startup;
 mod touch;
 
 // ===== 对外导出（保持旧 API 不变） =====
-pub(crate) use common::body_asset_path;
+pub(crate) use common::{body_asset_path, collect_png_files_recursive_for_mode};
 pub(crate) use default_idle::{
     collect_default_happy_idle_variants, collect_default_mode_idle_variants,
     select_default_files_for_mode,

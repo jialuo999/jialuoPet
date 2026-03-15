@@ -1,11 +1,15 @@
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Application, ApplicationWindow, Box, Button, Label, Orientation, Window,
+    Align, Application, ApplicationWindow, Box, Button, ComboBoxText, Label, Orientation, Window,
 };
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::animation::{
+    request_study_book_animation, request_study_paint_animation, request_study_research_animation,
+    request_study_stop_animation,
+};
 use crate::stats::{InteractType, PetStatsService};
 
 const SIDEBAR_WIDTH: i32 = 72;
@@ -74,7 +78,10 @@ pub struct InteractionPanel {
     status_label: Label,
     current_category: Rc<Cell<InteractCategory>>,
     category_buttons: HashMap<InteractCategory, Button>,
+    study_mode_combo: ComboBoxText,
+    study_duration_combo: ComboBoxText,
     action_button: Button,
+    stop_study_button: Button,
     stats_service: PetStatsService,
     on_after_interact: Rc<dyn Fn()>,
 }
@@ -146,17 +153,38 @@ impl InteractionPanel {
         description.set_hexpand(true);
         right_box.append(&description);
 
+        let study_mode_combo = ComboBoxText::new();
+        study_mode_combo.append_text("看书");
+        study_mode_combo.append_text("画画");
+        study_mode_combo.append_text("研究");
+        study_mode_combo.set_active(Some(0));
+        study_mode_combo.set_halign(Align::Start);
+        right_box.append(&study_mode_combo);
+
+        let study_duration_combo = ComboBoxText::new();
+        study_duration_combo.append_text("30分钟");
+        study_duration_combo.append_text("1小时");
+        study_duration_combo.set_active(Some(0));
+        study_duration_combo.set_halign(Align::Start);
+        right_box.append(&study_duration_combo);
+
         let action_button = Button::with_label("开始互动");
         action_button.set_halign(Align::Start);
-        right_box.append(&action_button);
 
         content_row.append(&sidebar);
         content_row.append(&right_box);
         panel_box.append(&content_row);
 
+        let bottom_actions = Box::new(Orientation::Horizontal, 8);
+        bottom_actions.set_halign(Align::End);
+        bottom_actions.append(&action_button);
+
+        let stop_study_button = Button::with_label("停止学习");
+        bottom_actions.append(&stop_study_button);
+
         let close_button = Button::with_label("退出");
-        close_button.set_halign(Align::End);
-        panel_box.append(&close_button);
+        bottom_actions.append(&close_button);
+        panel_box.append(&bottom_actions);
 
         window.set_child(Some(&panel_box));
 
@@ -182,13 +210,17 @@ impl InteractionPanel {
             status_label,
             current_category: Rc::new(Cell::new(category)),
             category_buttons,
+            study_mode_combo,
+            study_duration_combo,
             action_button,
+            stop_study_button,
             stats_service,
             on_after_interact,
         };
 
         panel.connect_sidebar_handlers();
         panel.connect_action_button();
+        panel.connect_stop_study_button();
         panel.switch_category(category);
 
         panel
@@ -212,6 +244,12 @@ impl InteractionPanel {
         self.window.set_title(Some(category.panel_title()));
         self.title.set_text(category.panel_title());
         self.description.set_text(category.description());
+        self.study_mode_combo
+            .set_visible(category == InteractCategory::Study);
+        self.study_duration_combo
+            .set_visible(category == InteractCategory::Study);
+        self.stop_study_button
+            .set_visible(category == InteractCategory::Study);
         self.status_label.set_text(&format!("当前选项：{}", category.menu_label()));
         self.update_sidebar_state();
     }
@@ -225,12 +263,18 @@ impl InteractionPanel {
             let status_label = self.status_label.clone();
             let window = self.window.clone();
             let category_buttons = self.category_buttons.clone();
+            let study_mode_combo = self.study_mode_combo.clone();
+            let study_duration_combo = self.study_duration_combo.clone();
+            let stop_study_button = self.stop_study_button.clone();
 
             button.connect_clicked(move |_| {
                 current_category.set(category);
                 window.set_title(Some(category.panel_title()));
                 title.set_text(category.panel_title());
                 description.set_text(category.description());
+                study_mode_combo.set_visible(category == InteractCategory::Study);
+                study_duration_combo.set_visible(category == InteractCategory::Study);
+                stop_study_button.set_visible(category == InteractCategory::Study);
                 status_label.set_text(&format!("当前选项：{}", category.menu_label()));
 
                 for (button_category, button) in &category_buttons {
@@ -249,17 +293,57 @@ impl InteractionPanel {
         let status_label = self.status_label.clone();
         let stats_service = self.stats_service.clone();
         let on_after_interact = self.on_after_interact.clone();
+        let study_mode_combo = self.study_mode_combo.clone();
+        let study_duration_combo = self.study_duration_combo.clone();
 
         self.action_button.connect_clicked(move |_| {
             let category = current_category.get();
             let interact_type = category.interact_type();
             let mut stats_service = stats_service.clone();
             if stats_service.on_interact(interact_type) {
-                status_label.set_text(&format!("已执行：{}", category.menu_label()));
+                if category == InteractCategory::Study {
+                    let study_mode = study_mode_combo
+                        .active_text()
+                        .map(|text| text.to_string())
+                        .unwrap_or_else(|| "看书".to_string());
+
+                    let duration_secs = match study_duration_combo
+                        .active_text()
+                        .as_ref()
+                        .map(|text| text.as_str())
+                    {
+                        Some("1小时") => 3600,
+                        _ => 1800,
+                    };
+
+                    match study_mode.as_str() {
+                        "画画" => request_study_paint_animation(duration_secs),
+                        "研究" => request_study_research_animation(duration_secs),
+                        _ => request_study_book_animation(duration_secs),
+                    }
+
+                    let duration_text = if duration_secs == 3600 { "1小时" } else { "30分钟" };
+                    status_label.set_text(&format!(
+                        "已执行：{}（{}，{}）",
+                        category.menu_label(),
+                        study_mode,
+                        duration_text
+                    ));
+                } else {
+                    status_label.set_text(&format!("已执行：{}", category.menu_label()));
+                }
                 on_after_interact();
             } else {
                 status_label.set_text("当前状态无法互动，请先恢复体力");
             }
+        });
+    }
+
+    fn connect_stop_study_button(&self) {
+        let status_label = self.status_label.clone();
+        self.stop_study_button.connect_clicked(move |_| {
+            request_study_stop_animation();
+            status_label.set_text("已手动停止学习，正在播放收尾动画");
         });
     }
 

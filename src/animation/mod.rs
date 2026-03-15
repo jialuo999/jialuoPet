@@ -12,5 +12,7 @@ pub use requests::{
     request_animation_config_reload,
     request_hover_animation_end, request_hover_animation_start,
     request_pinch_animation_end, request_pinch_animation_start, request_shutdown_animation,
+    request_study_book_animation, request_study_paint_animation,
+    request_study_research_animation, request_study_stop_animation,
     request_touch_body_animation, request_touch_head_animation,
 };

@@ -1,5 +1,5 @@
 // ===== 依赖导入 =====
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
 // ===== 各类动画请求阶段常量 =====
 pub(crate) const DRAG_ANIM_IDLE: u8 = 0;
@@ -23,12 +23,20 @@ pub(crate) const HOVER_ANIM_IDLE: u8 = 0;
 pub(crate) const HOVER_ANIM_START_REQUESTED: u8 = 1;
 pub(crate) const HOVER_ANIM_END_REQUESTED: u8 = 2;
 
+pub(crate) const STUDY_ANIM_IDLE: u8 = 0;
+pub(crate) const STUDY_ANIM_BOOK_REQUESTED: u8 = 1;
+pub(crate) const STUDY_ANIM_PAINT_REQUESTED: u8 = 2;
+pub(crate) const STUDY_ANIM_RESEARCH_REQUESTED: u8 = 3;
+pub(crate) const STUDY_ANIM_STOP_REQUESTED: u8 = 4;
+
 // ===== 全局请求状态（原子变量） =====
 static DRAG_RAISE_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(DRAG_ANIM_IDLE);
 static PINCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(PINCH_ANIM_IDLE);
 static SHUTDOWN_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(SHUTDOWN_ANIM_IDLE);
 static TOUCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(TOUCH_ANIM_IDLE);
 static HOVER_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(HOVER_ANIM_IDLE);
+static STUDY_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(STUDY_ANIM_IDLE);
+static STUDY_ANIMATION_DURATION_SECS: AtomicU32 = AtomicU32::new(1800);
 static SHUTDOWN_ANIMATION_FINISHED: AtomicBool = AtomicBool::new(false);
 static ANIMATION_CONFIG_RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -39,6 +47,8 @@ pub(crate) struct AnimationRequests {
     pub(crate) shutdown: u8,
     pub(crate) touch: u8,
     pub(crate) hover: u8,
+    pub(crate) study: u8,
+    pub(crate) study_duration_secs: u32,
 }
 
 // ===== 请求写入接口 =====
@@ -83,6 +93,25 @@ pub fn request_hover_animation_end() {
     HOVER_ANIMATION_PHASE.store(HOVER_ANIM_END_REQUESTED, Ordering::Relaxed);
 }
 
+pub fn request_study_book_animation(duration_secs: u32) {
+    STUDY_ANIMATION_DURATION_SECS.store(duration_secs.max(1), Ordering::Relaxed);
+    STUDY_ANIMATION_PHASE.store(STUDY_ANIM_BOOK_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_study_paint_animation(duration_secs: u32) {
+    STUDY_ANIMATION_DURATION_SECS.store(duration_secs.max(1), Ordering::Relaxed);
+    STUDY_ANIMATION_PHASE.store(STUDY_ANIM_PAINT_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_study_research_animation(duration_secs: u32) {
+    STUDY_ANIMATION_DURATION_SECS.store(duration_secs.max(1), Ordering::Relaxed);
+    STUDY_ANIMATION_PHASE.store(STUDY_ANIM_RESEARCH_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_study_stop_animation() {
+    STUDY_ANIMATION_PHASE.store(STUDY_ANIM_STOP_REQUESTED, Ordering::Relaxed);
+}
+
 pub fn request_animation_config_reload() {
     ANIMATION_CONFIG_RELOAD_REQUESTED.store(true, Ordering::Relaxed);
 }
@@ -103,6 +132,8 @@ pub(crate) fn consume_requests() -> AnimationRequests {
         shutdown: SHUTDOWN_ANIMATION_PHASE.swap(SHUTDOWN_ANIM_IDLE, Ordering::Relaxed),
         touch: TOUCH_ANIMATION_PHASE.swap(TOUCH_ANIM_IDLE, Ordering::Relaxed),
         hover: HOVER_ANIMATION_PHASE.swap(HOVER_ANIM_IDLE, Ordering::Relaxed),
+        study: STUDY_ANIMATION_PHASE.swap(STUDY_ANIM_IDLE, Ordering::Relaxed),
+        study_duration_secs: STUDY_ANIMATION_DURATION_SECS.load(Ordering::Relaxed),
     }
 }
 

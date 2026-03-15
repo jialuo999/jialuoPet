@@ -17,7 +17,7 @@ use crate::window::position::current_window_left_top;
 use super::assets::body_asset_path;
 use super::player::{
     AnimationPlayer, DefaultIdlePlayer, DragRaisePlayer, PinchPlayer, ShutdownPlayer,
-    SideHideRightMainPlayer, StartupPlayer, TouchPlayer,
+    SideHideRightMainPlayer, StartupPlayer, StudyPlayer, TouchPlayer,
 };
 use super::requests::{
     consume_animation_config_reload_request, consume_requests, set_shutdown_animation_finished,
@@ -25,7 +25,8 @@ use super::requests::{
     DRAG_ANIM_START_REQUESTED, HOVER_ANIM_END_REQUESTED, HOVER_ANIM_START_REQUESTED,
     PINCH_ANIM_END_REQUESTED, PINCH_ANIM_LOOP_REQUESTED,
     PINCH_ANIM_START_REQUESTED, SHUTDOWN_ANIM_REQUESTED, TOUCH_ANIM_BODY_REQUESTED,
-    TOUCH_ANIM_HEAD_REQUESTED,
+    TOUCH_ANIM_HEAD_REQUESTED, STUDY_ANIM_BOOK_REQUESTED, STUDY_ANIM_PAINT_REQUESTED,
+    STUDY_ANIM_RESEARCH_REQUESTED, STUDY_ANIM_STOP_REQUESTED,
 };
 
 // ===== 运行时播放器集合 =====
@@ -35,6 +36,7 @@ struct PlayerSet {
     drag_raise: DragRaisePlayer,
     pinch: PinchPlayer,
     touch: TouchPlayer,
+    study: StudyPlayer,
     startup: StartupPlayer,
     side_hide_right_main: SideHideRightMainPlayer,
     side_hide_right_rise: SideHideRightMainPlayer,
@@ -61,6 +63,7 @@ impl PlayerSet {
         self.drag_raise.reload(mode);
         self.pinch.reload(mode);
         self.touch.reload(mode);
+        self.study.reload(mode);
         self.shutdown.reload(mode);
         self.side_hide_right_main.reload(mode);
         self.side_hide_right_rise.reload(mode);
@@ -113,6 +116,7 @@ fn maybe_trigger_side_hide_right_main(
         || players.drag_raise.is_active()
         || players.pinch.is_active()
         || players.touch.is_active()
+        || players.study.is_active()
         || players.startup.is_active()
         || players.side_hide_right_main.is_active()
         || players.side_hide_right_rise.is_active()
@@ -167,6 +171,7 @@ fn maybe_trigger_side_hide_left_main(
         || players.drag_raise.is_active()
         || players.pinch.is_active()
         || players.touch.is_active()
+        || players.study.is_active()
         || players.startup.is_active()
         || players.side_hide_right_main.is_active()
         || players.side_hide_right_rise.is_active()
@@ -354,6 +359,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     match reqs.drag {
         DRAG_ANIM_START_REQUESTED => {
             players.shutdown.stop();
+            players.study.stop();
             players.side_hide_right_main.stop();
             players.side_hide_right_rise.stop();
             players.side_hide_left_main.stop();
@@ -368,6 +374,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         }
         DRAG_ANIM_LOOP_REQUESTED => {
             players.shutdown.stop();
+            players.study.stop();
             players.side_hide_right_main.stop();
             players.side_hide_right_rise.stop();
             players.side_hide_left_main.stop();
@@ -394,6 +401,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         players.drag_raise.stop();
         players.pinch.stop();
         players.touch.stop();
+        players.study.stop();
         players.startup.stop();
         players.side_hide_right_main.stop();
         players.side_hide_right_rise.stop();
@@ -404,6 +412,57 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     }
 
     if players.shutdown.is_active() {
+        return;
+    }
+
+    match reqs.study {
+        STUDY_ANIM_BOOK_REQUESTED => {
+            players.drag_raise.stop();
+            players.pinch.stop();
+            players.touch.stop();
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.stop();
+            players.side_hide_left_main.stop();
+            players.side_hide_left_rise.stop();
+            players
+                .study
+                .start_book(&mut players.startup, reqs.study_duration_secs as u64);
+            return;
+        }
+        STUDY_ANIM_PAINT_REQUESTED => {
+            players.drag_raise.stop();
+            players.pinch.stop();
+            players.touch.stop();
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.stop();
+            players.side_hide_left_main.stop();
+            players.side_hide_left_rise.stop();
+            players
+                .study
+                .start_paint(&mut players.startup, reqs.study_duration_secs as u64);
+            return;
+        }
+        STUDY_ANIM_RESEARCH_REQUESTED => {
+            players.drag_raise.stop();
+            players.pinch.stop();
+            players.touch.stop();
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.stop();
+            players.side_hide_left_main.stop();
+            players.side_hide_left_rise.stop();
+            players
+                .study
+                .start_research(&mut players.startup, reqs.study_duration_secs as u64);
+            return;
+        }
+        STUDY_ANIM_STOP_REQUESTED => {
+            players.study.interrupt(false);
+            return;
+        }
+        _ => {}
+    }
+
+    if players.study.is_active() {
         return;
     }
 
@@ -473,18 +532,21 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             if players.drag_raise.is_playing_end() {
                 players.drag_raise.stop();
             }
+            players.study.stop();
             players.pinch.start(&mut players.touch, &mut players.startup);
         }
         PINCH_ANIM_LOOP_REQUESTED => {
             if players.drag_raise.is_playing_end() {
                 players.drag_raise.stop();
             }
+            players.study.stop();
             players.pinch.continue_loop(&mut players.touch, &mut players.startup);
         }
         PINCH_ANIM_END_REQUESTED => {
             if players.drag_raise.is_playing_end() {
                 players.drag_raise.stop();
             }
+            players.study.stop();
             players.pinch.end(&mut players.touch, &mut players.startup);
         }
         _ => {}
@@ -496,12 +558,14 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
                 if players.drag_raise.is_playing_end() {
                     players.drag_raise.stop();
                 }
+                players.study.stop();
                 players.touch.start_head(&mut players.startup)
             }
             TOUCH_ANIM_BODY_REQUESTED => {
                 if players.drag_raise.is_playing_end() {
                     players.drag_raise.stop();
                 }
+                players.study.stop();
                 players.touch.start_body(&mut players.startup)
             }
             _ => {}
@@ -512,7 +576,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
 
 // ===== 模式同步：根据数值模式更新播放器素材 =====
 fn maybe_update_mode(players: &mut PlayerSet, stats_service: &PetStatsService) {
-    if players.startup.is_active() {
+    if players.startup.is_active() || players.study.is_active() {
         return;
     }
 
@@ -554,6 +618,14 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
             return frame;
         }
         players.touch.interrupt(true);
+        return players.default_idle.enter().unwrap_or_default();
+    }
+
+    if players.study.is_active() {
+        if let Some(frame) = players.study.next_frame() {
+            return frame;
+        }
+        players.study.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
     }
 
@@ -635,6 +707,9 @@ fn build_players(
         &animation_config.assets_body_root,
         &animation_config.touch_body_root,
     );
+    let study_book_root = body_asset_path(&animation_config.assets_body_root, "WORK/Study");
+    let study_paint_root = body_asset_path(&animation_config.assets_body_root, "WORK/StudyPaint");
+    let study_research_root = body_asset_path(&animation_config.assets_body_root, "WORK/StudyTWO");
     let side_hide_right_main_root =
         body_asset_path(&animation_config.assets_body_root, &animation_config.side_hide_right_main_root);
     let side_hide_right_rise_root =
@@ -650,6 +725,12 @@ fn build_players(
         drag_raise: DragRaisePlayer::new(drag_raise_dynamic_root, drag_raise_static_root, current_mode),
         pinch: PinchPlayer::new(pinch_root, current_mode),
         touch: TouchPlayer::new(touch_head_root, touch_body_root, current_mode),
+        study: StudyPlayer::new(
+            study_book_root,
+            study_paint_root,
+            study_research_root,
+            current_mode,
+        ),
         startup: StartupPlayer::new(startup_root, current_mode),
         side_hide_right_main: SideHideRightMainPlayer::new(side_hide_right_main_root, current_mode),
         side_hide_right_rise: SideHideRightMainPlayer::new(side_hide_right_rise_root, current_mode),
@@ -710,6 +791,7 @@ pub fn load_carousel_images(
         let is_press = players.drag_raise.is_active()
             || players.pinch.is_active()
             || players.touch.is_active()
+            || players.study.is_active()
             || players.side_hide_right_main.is_active()
             || players.side_hide_right_rise.is_active()
             || players.side_hide_left_main.is_active()
