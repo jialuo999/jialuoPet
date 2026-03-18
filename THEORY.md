@@ -4,15 +4,15 @@
 
 `coordinator` 定时执行四步：
 
-1. `consume_requests()`：消费 drag/pinch/touch/shutdown 的原子请求
+1. `consume_requests()`：消费 drag/pinch/touch/shutdown/study/work 的原子请求
 2. `maybe_update_mode()`：根据状态值决定是否重载各 player 资源
 3. `dispatch_requests()`：按优先级切换 player 状态
 4. `advance_frame()`：按取帧优先级选择下一帧路径并刷新图像
 
 ## 两层优先级
 
-- `dispatch` 优先级：`shutdown > drag_raise > pinch > touch`
-- `advance_frame` 取帧优先级：`shutdown -> drag_raise -> pinch -> touch -> startup -> default_idle`
+- `dispatch` 优先级：`drag_raise > shutdown > study/work > pinch > touch`
+- `advance_frame` 取帧优先级：`shutdown -> drag_raise -> pinch -> touch -> study -> work -> startup -> side_hide -> default_idle`
 
 说明：`startup` 不参与外部请求调度，只在初始化时激活一次，播完后自动让位给 `default_idle`。
 

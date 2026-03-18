@@ -22,8 +22,8 @@
   - `watcher.rs`：配置热更新监听。
 - **动画域**：`src/animation/*`
   - `coordinator.rs`：统一调度动画状态与帧推进。
-  - `requests.rs`：通过原子变量传递动画请求（drag/pinch/touch/shutdown）。
-  - `player/*`：各类动画播放器（startup/default idle/drag/pinch/touch/shutdown）。
+  - `requests.rs`：通过原子变量传递动画请求（drag/pinch/touch/shutdown/study/work）。
+  - `player/*`：各类动画播放器（startup/default idle/drag/pinch/touch/study/work/shutdown）。
   - `assets/*`：动画资源路径与帧收集逻辑。
 - **交互层**：
   - `src/drag.rs`：长按拖拽、捏捏区域判断、窗口跟随与拖拽动画触发。
@@ -74,6 +74,8 @@
 - Pinch：start / loop / end
 - Touch：head / body
 - Shutdown：request
+- Study：book / paint / research / stop（含 duration_secs）
+- Work：clean / copywriting / streaming（含 duration_secs）
 
 动画调度器每个 tick 使用 `consume_requests()` 一次性消费请求，避免 UI 回调和动画状态机强耦合。
 
@@ -85,8 +87,9 @@
 
 1. `drag_raise`（长按拖动最高优先级，可抢占并打断其他动画）
 2. `shutdown`
-3. `pinch`
-4. `touch`
+3. `study/work`
+4. `pinch`
+5. `touch`
 
 帧推进优先级为：
 
@@ -94,9 +97,11 @@
 2. `drag_raise`
 3. `pinch`
 4. `touch`
-5. `startup`
-6. `side_hide_right_main`
-7. `default_idle`
+5. `study`
+6. `work`
+7. `startup`
+8. `side_hide_right_main`
+9. `default_idle`
 
 说明：`startup` 仅初始化时活跃，播完后自动回落到 `default_idle`。当前无 `IDEL`/`State` 分支。
 
@@ -212,10 +217,21 @@
   2. 自动切换左侧选项到点击项（学习、工作或玩耍）。
 - 互动面板结构：
   - 左侧：分类选项卡按钮（学习、工作、玩耍）；
-  - 右侧：当前分类说明 + `开始互动` 操作按钮。
+  - 右侧：当前分类说明 + `开始互动` 操作按钮；
+  - 学习分类：显示 `学习类型（看书/画画/研究）` + `时长（30分钟/1小时）` + `停止学习`；
+  - 工作分类：显示 `工作类型（擦屏幕/写文案/直播）` + `时长（30分钟/1小时）`。
 - 互动执行：
-  - 点击 `开始互动` 后调用 `PetStatsService::on_interact(...)`；
+  - 学习：点击 `开始互动` 调用 `PetStatsService::start_study(mode, duration)`，并请求对应学习动画；
+  - 工作：点击 `开始互动` 调用 `PetStatsService::on_interact(InteractType::Work)`，并请求对应工作动画；
   - 成功时刷新 `StatsPanel` 并保存当前角色数值存档。
+
+### 6.1.4 工作互动动画映射（新增）
+
+- 擦屏幕：`assets/body/WORK/WorkClean`
+- 写文案：`assets/body/WORK/WorkONE`
+- 直播：`assets/body/WORK/WorkTWO`
+
+说明：运行时通过独立 `work` 播放器承载工作动画，避免与学习动画请求互相覆盖。
 
 ### 6.2 配置热更新
 

@@ -1,16 +1,16 @@
 [stats]
 health = 100.0
-feeling = 123.0
+feeling = 122.88548741364836
 feeling_max = 123.0
 likability_max = 350.0
-strength = 84.20999999999879
+strength = 84.65999999999876
 strength_max = 146.0
-strength_food = 137.5999999999981
-strength_drink = 143.84999999999962
+strength_food = 137.149999999998
+strength_drink = 142.94999999999968
 likability = 350.0
 level = 26
 level_stage = 0
-exp = 5060.100000000095
+exp = 5061.4500000001
 money = 6
 
 [stats.inventory.items]
