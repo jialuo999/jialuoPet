@@ -45,6 +45,7 @@ pub(crate) struct StudyPlayer {
     end_files: Vec<PathBuf>,
     end_index: usize,
     loop_deadline: Option<Instant>,
+    pending_resume_after_drag: Option<(StudyAction, u64)>,
 }
 
 impl StudyPlayer {
@@ -70,7 +71,31 @@ impl StudyPlayer {
             end_files: Vec::new(),
             end_index: 0,
             loop_deadline: None,
+            pending_resume_after_drag: None,
         }
+    }
+
+    fn root_for_action(&self, action: StudyAction) -> PathBuf {
+        match action {
+            StudyAction::Book => self.study_book_root.clone(),
+            StudyAction::Paint => self.study_paint_root.clone(),
+            StudyAction::Research => self.study_research_root.clone(),
+            StudyAction::None => PathBuf::new(),
+        }
+    }
+
+    fn clear_playback_state(&mut self) {
+        self.action = StudyAction::None;
+        self.stage = StudyPlaybackStage::None;
+        self.start_files.clear();
+        self.start_index = 0;
+        self.loop_variants.clear();
+        self.loop_variant_index = 0;
+        self.loop_files.clear();
+        self.loop_index = 0;
+        self.end_files.clear();
+        self.end_index = 0;
+        self.loop_deadline = None;
     }
 
     fn component_matches_segment(name: &str, stage_prefix: &str) -> bool {
@@ -207,17 +232,55 @@ impl StudyPlayer {
 
     pub(crate) fn start_book(&mut self, startup: &mut StartupPlayer, duration_secs: u64) {
         let root = self.study_book_root.clone();
+        self.pending_resume_after_drag = None;
         self.start_with_root(&root, StudyAction::Book, duration_secs, startup);
     }
 
     pub(crate) fn start_paint(&mut self, startup: &mut StartupPlayer, duration_secs: u64) {
         let root = self.study_paint_root.clone();
+        self.pending_resume_after_drag = None;
         self.start_with_root(&root, StudyAction::Paint, duration_secs, startup);
     }
 
     pub(crate) fn start_research(&mut self, startup: &mut StartupPlayer, duration_secs: u64) {
         let root = self.study_research_root.clone();
+        self.pending_resume_after_drag = None;
         self.start_with_root(&root, StudyAction::Research, duration_secs, startup);
+    }
+
+    pub(crate) fn interrupt_by_drag(&mut self) {
+        if !self.is_active() {
+            return;
+        }
+
+        if matches!(self.stage, StudyPlaybackStage::Start | StudyPlaybackStage::Loop)
+            && self.action != StudyAction::None
+        {
+            let remaining_secs = self
+                .loop_deadline
+                .and_then(|deadline| deadline.checked_duration_since(Instant::now()))
+                .map(|d| d.as_secs().max(1))
+                .unwrap_or(1);
+            self.pending_resume_after_drag = Some((self.action, remaining_secs));
+        }
+
+        self.clear_playback_state();
+    }
+
+    pub(crate) fn resume_if_pending_after_drag(&mut self, startup: &mut StartupPlayer) {
+        let Some((action, remaining_secs)) = self.pending_resume_after_drag.take() else {
+            return;
+        };
+
+        let root = self.root_for_action(action);
+        if root.as_os_str().is_empty() {
+            return;
+        }
+        self.start_with_root(&root, action, remaining_secs, startup);
+    }
+
+    pub(crate) fn clear_pending_resume_after_drag(&mut self) {
+        self.pending_resume_after_drag = None;
     }
 }
 
@@ -326,17 +389,8 @@ impl AnimationPlayer for StudyPlayer {
             return;
         }
 
-        self.action = StudyAction::None;
-        self.stage = StudyPlaybackStage::None;
-        self.start_files.clear();
-        self.start_index = 0;
-        self.loop_variants.clear();
-        self.loop_variant_index = 0;
-        self.loop_files.clear();
-        self.loop_index = 0;
-        self.end_files.clear();
-        self.end_index = 0;
-        self.loop_deadline = None;
+        self.clear_playback_state();
+        self.pending_resume_after_drag = None;
     }
 
     fn reload(&mut self, mode: PetMode) {

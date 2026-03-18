@@ -25,8 +25,34 @@ pub enum InteractType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PetRuntimeState {
     Sleep,
+    Study,
     Work,
     Nomal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StudyMode {
+    Book,
+    Paint,
+    Research,
+}
+
+impl StudyMode {
+    pub fn from_label(label: &str) -> Self {
+        match label {
+            "画画" => Self::Paint,
+            "研究" => Self::Research,
+            _ => Self::Book,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Book => "看书",
+            Self::Paint => "画画",
+            Self::Research => "研究",
+        }
+    }
 }
 
 // ===== 背包物品条目 =====

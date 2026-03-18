@@ -27,6 +27,8 @@ use super::requests::{
     PINCH_ANIM_START_REQUESTED, SHUTDOWN_ANIM_REQUESTED, TOUCH_ANIM_BODY_REQUESTED,
     TOUCH_ANIM_HEAD_REQUESTED, STUDY_ANIM_BOOK_REQUESTED, STUDY_ANIM_PAINT_REQUESTED,
     STUDY_ANIM_RESEARCH_REQUESTED, STUDY_ANIM_STOP_REQUESTED,
+    WORK_ANIM_CLEAN_REQUESTED, WORK_ANIM_COPYWRITING_REQUESTED,
+    WORK_ANIM_STREAMING_REQUESTED,
 };
 
 // ===== 运行时播放器集合 =====
@@ -37,6 +39,7 @@ struct PlayerSet {
     pinch: PinchPlayer,
     touch: TouchPlayer,
     study: StudyPlayer,
+    work: StudyPlayer,
     startup: StartupPlayer,
     side_hide_right_main: SideHideRightMainPlayer,
     side_hide_right_rise: SideHideRightMainPlayer,
@@ -64,6 +67,7 @@ impl PlayerSet {
         self.pinch.reload(mode);
         self.touch.reload(mode);
         self.study.reload(mode);
+        self.work.reload(mode);
         self.shutdown.reload(mode);
         self.side_hide_right_main.reload(mode);
         self.side_hide_right_rise.reload(mode);
@@ -117,6 +121,7 @@ fn maybe_trigger_side_hide_right_main(
         || players.pinch.is_active()
         || players.touch.is_active()
         || players.study.is_active()
+        || players.work.is_active()
         || players.startup.is_active()
         || players.side_hide_right_main.is_active()
         || players.side_hide_right_rise.is_active()
@@ -172,6 +177,7 @@ fn maybe_trigger_side_hide_left_main(
         || players.pinch.is_active()
         || players.touch.is_active()
         || players.study.is_active()
+        || players.work.is_active()
         || players.startup.is_active()
         || players.side_hide_right_main.is_active()
         || players.side_hide_right_rise.is_active()
@@ -359,7 +365,8 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
     match reqs.drag {
         DRAG_ANIM_START_REQUESTED => {
             players.shutdown.stop();
-            players.study.stop();
+            players.study.interrupt_by_drag();
+            players.work.interrupt_by_drag();
             players.side_hide_right_main.stop();
             players.side_hide_right_rise.stop();
             players.side_hide_left_main.stop();
@@ -374,7 +381,8 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         }
         DRAG_ANIM_LOOP_REQUESTED => {
             players.shutdown.stop();
-            players.study.stop();
+            players.study.interrupt_by_drag();
+            players.work.interrupt_by_drag();
             players.side_hide_right_main.stop();
             players.side_hide_right_rise.stop();
             players.side_hide_left_main.stop();
@@ -402,6 +410,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         players.pinch.stop();
         players.touch.stop();
         players.study.stop();
+        players.work.stop();
         players.startup.stop();
         players.side_hide_right_main.stop();
         players.side_hide_right_rise.stop();
@@ -417,6 +426,9 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
 
     match reqs.study {
         STUDY_ANIM_BOOK_REQUESTED => {
+            players.study.clear_pending_resume_after_drag();
+            players.work.clear_pending_resume_after_drag();
+            players.work.stop();
             players.drag_raise.stop();
             players.pinch.stop();
             players.touch.stop();
@@ -430,6 +442,9 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             return;
         }
         STUDY_ANIM_PAINT_REQUESTED => {
+            players.study.clear_pending_resume_after_drag();
+            players.work.clear_pending_resume_after_drag();
+            players.work.stop();
             players.drag_raise.stop();
             players.pinch.stop();
             players.touch.stop();
@@ -443,6 +458,9 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             return;
         }
         STUDY_ANIM_RESEARCH_REQUESTED => {
+            players.study.clear_pending_resume_after_drag();
+            players.work.clear_pending_resume_after_drag();
+            players.work.stop();
             players.drag_raise.stop();
             players.pinch.stop();
             players.touch.stop();
@@ -456,14 +474,102 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             return;
         }
         STUDY_ANIM_STOP_REQUESTED => {
+            players.study.clear_pending_resume_after_drag();
             players.study.interrupt(false);
             return;
         }
         _ => {}
     }
 
-    if players.study.is_active() {
-        return;
+    match reqs.work {
+        WORK_ANIM_CLEAN_REQUESTED => {
+            players.work.clear_pending_resume_after_drag();
+            players.study.clear_pending_resume_after_drag();
+            players.study.stop();
+            players.drag_raise.stop();
+            players.pinch.stop();
+            players.touch.stop();
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.stop();
+            players.side_hide_left_main.stop();
+            players.side_hide_left_rise.stop();
+            players
+                .work
+                .start_book(&mut players.startup, reqs.work_duration_secs as u64);
+            return;
+        }
+        WORK_ANIM_COPYWRITING_REQUESTED => {
+            players.work.clear_pending_resume_after_drag();
+            players.study.clear_pending_resume_after_drag();
+            players.study.stop();
+            players.drag_raise.stop();
+            players.pinch.stop();
+            players.touch.stop();
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.stop();
+            players.side_hide_left_main.stop();
+            players.side_hide_left_rise.stop();
+            players
+                .work
+                .start_paint(&mut players.startup, reqs.work_duration_secs as u64);
+            return;
+        }
+        WORK_ANIM_STREAMING_REQUESTED => {
+            players.work.clear_pending_resume_after_drag();
+            players.study.clear_pending_resume_after_drag();
+            players.study.stop();
+            players.drag_raise.stop();
+            players.pinch.stop();
+            players.touch.stop();
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.stop();
+            players.side_hide_left_main.stop();
+            players.side_hide_left_rise.stop();
+            players
+                .work
+                .start_research(&mut players.startup, reqs.work_duration_secs as u64);
+            return;
+        }
+        _ => {}
+    }
+
+    let has_blocking_request = matches!(
+        reqs.drag,
+        DRAG_ANIM_START_REQUESTED | DRAG_ANIM_LOOP_REQUESTED | DRAG_ANIM_END_REQUESTED
+    ) || matches!(
+        reqs.pinch,
+        PINCH_ANIM_START_REQUESTED | PINCH_ANIM_LOOP_REQUESTED | PINCH_ANIM_END_REQUESTED
+    ) || matches!(reqs.touch, TOUCH_ANIM_HEAD_REQUESTED | TOUCH_ANIM_BODY_REQUESTED)
+        || reqs.shutdown == SHUTDOWN_ANIM_REQUESTED;
+
+    let has_blocking_player = players.shutdown.is_active()
+        || players.drag_raise.is_active()
+        || players.pinch.is_active()
+        || players.touch.is_active()
+        || players.side_hide_right_main.is_active()
+        || players.side_hide_right_rise.is_active()
+        || players.side_hide_left_main.is_active()
+        || players.side_hide_left_rise.is_active();
+
+    if !players.study.is_active() && !players.work.is_active() && !has_blocking_request && !has_blocking_player {
+        players.study.resume_if_pending_after_drag(&mut players.startup);
+        if !players.study.is_active() {
+            players.work.resume_if_pending_after_drag(&mut players.startup);
+        }
+    }
+
+    if players.study.is_active() || players.work.is_active() {
+        let has_touch_or_pinch_request = matches!(
+            reqs.pinch,
+            PINCH_ANIM_START_REQUESTED | PINCH_ANIM_LOOP_REQUESTED | PINCH_ANIM_END_REQUESTED
+        ) || matches!(reqs.touch, TOUCH_ANIM_HEAD_REQUESTED | TOUCH_ANIM_BODY_REQUESTED);
+
+        if has_touch_or_pinch_request {
+            players.study.interrupt_by_drag();
+            players.work.interrupt_by_drag();
+        } else {
+            return;
+        }
     }
 
     if players.side_hide_right_rise.is_active() {
@@ -532,21 +638,24 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             if players.drag_raise.is_playing_end() {
                 players.drag_raise.stop();
             }
-            players.study.stop();
+            players.study.interrupt_by_drag();
+            players.work.interrupt_by_drag();
             players.pinch.start(&mut players.touch, &mut players.startup);
         }
         PINCH_ANIM_LOOP_REQUESTED => {
             if players.drag_raise.is_playing_end() {
                 players.drag_raise.stop();
             }
-            players.study.stop();
+            players.study.interrupt_by_drag();
+            players.work.interrupt_by_drag();
             players.pinch.continue_loop(&mut players.touch, &mut players.startup);
         }
         PINCH_ANIM_END_REQUESTED => {
             if players.drag_raise.is_playing_end() {
                 players.drag_raise.stop();
             }
-            players.study.stop();
+            players.study.interrupt_by_drag();
+            players.work.interrupt_by_drag();
             players.pinch.end(&mut players.touch, &mut players.startup);
         }
         _ => {}
@@ -558,14 +667,16 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
                 if players.drag_raise.is_playing_end() {
                     players.drag_raise.stop();
                 }
-                players.study.stop();
+                players.study.interrupt_by_drag();
+                players.work.interrupt_by_drag();
                 players.touch.start_head(&mut players.startup)
             }
             TOUCH_ANIM_BODY_REQUESTED => {
                 if players.drag_raise.is_playing_end() {
                     players.drag_raise.stop();
                 }
-                players.study.stop();
+                players.study.interrupt_by_drag();
+                players.work.interrupt_by_drag();
                 players.touch.start_body(&mut players.startup)
             }
             _ => {}
@@ -576,7 +687,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
 
 // ===== 模式同步：根据数值模式更新播放器素材 =====
 fn maybe_update_mode(players: &mut PlayerSet, stats_service: &PetStatsService) {
-    if players.startup.is_active() || players.study.is_active() {
+    if players.startup.is_active() || players.study.is_active() || players.work.is_active() {
         return;
     }
 
@@ -626,6 +737,14 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
             return frame;
         }
         players.study.interrupt(true);
+        return players.default_idle.enter().unwrap_or_default();
+    }
+
+    if players.work.is_active() {
+        if let Some(frame) = players.work.next_frame() {
+            return frame;
+        }
+        players.work.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
     }
 
@@ -710,6 +829,9 @@ fn build_players(
     let study_book_root = body_asset_path(&animation_config.assets_body_root, "WORK/Study");
     let study_paint_root = body_asset_path(&animation_config.assets_body_root, "WORK/StudyPaint");
     let study_research_root = body_asset_path(&animation_config.assets_body_root, "WORK/StudyTWO");
+    let work_clean_root = body_asset_path(&animation_config.assets_body_root, "WORK/WorkClean");
+    let work_copywriting_root = body_asset_path(&animation_config.assets_body_root, "WORK/WorkONE");
+    let work_streaming_root = body_asset_path(&animation_config.assets_body_root, "WORK/WorkTWO");
     let side_hide_right_main_root =
         body_asset_path(&animation_config.assets_body_root, &animation_config.side_hide_right_main_root);
     let side_hide_right_rise_root =
@@ -729,6 +851,12 @@ fn build_players(
             study_book_root,
             study_paint_root,
             study_research_root,
+            current_mode,
+        ),
+        work: StudyPlayer::new(
+            work_clean_root,
+            work_copywriting_root,
+            work_streaming_root,
             current_mode,
         ),
         startup: StartupPlayer::new(startup_root, current_mode),
@@ -792,6 +920,7 @@ pub fn load_carousel_images(
             || players.pinch.is_active()
             || players.touch.is_active()
             || players.study.is_active()
+            || players.work.is_active()
             || players.side_hide_right_main.is_active()
             || players.side_hide_right_rise.is_active()
             || players.side_hide_left_main.is_active()

@@ -7,7 +7,7 @@ use rand::{random, Rng};
 
 use super::food::ItemDef;
 use super::leveling::{add_exp, PetLevelState};
-use super::model::{InteractType, PetMode, PetRuntimeState, PetStats};
+use super::model::{InteractType, PetMode, PetRuntimeState, PetStats, StudyMode};
 
 // ===== 系统参数常量 =====
 const LOGIC_INTERVAL_MIN_SECS: f64 = 5.0;
@@ -22,6 +22,54 @@ const INTERACT_FEELING_GAIN: f64 = 1.0;
 const WORK_BASE_FOOD_COST_PER_GAME_MIN: f64 = 1.0;
 const WORK_BASE_DRINK_COST_PER_GAME_MIN: f64 = 1.0;
 const WORK_BASE_OUTPUT_PER_GAME_MIN: f64 = 100.0;
+const STUDY_DEFAULT_FOOD_COST_PER_GAME_MIN: f64 = 1.0;
+const STUDY_DEFAULT_DRINK_COST_PER_GAME_MIN: f64 = 1.0;
+const STUDY_DEFAULT_EXP_BASE_PER_GAME_MIN: f64 = 80.0;
+const STUDY_DEFAULT_FEELING_FACTOR: f64 = 0.2;
+const STUDY_DEFAULT_FINISH_BONUS: f64 = 0.2;
+
+#[derive(Debug, Clone, Copy)]
+struct StudyProfile {
+    food_cost_per_game_min: f64,
+    drink_cost_per_game_min: f64,
+    exp_base_per_game_min: f64,
+    feeling_factor: f64,
+    finish_bonus: f64,
+}
+
+impl Default for StudyProfile {
+    fn default() -> Self {
+        Self {
+            food_cost_per_game_min: STUDY_DEFAULT_FOOD_COST_PER_GAME_MIN,
+            drink_cost_per_game_min: STUDY_DEFAULT_DRINK_COST_PER_GAME_MIN,
+            exp_base_per_game_min: STUDY_DEFAULT_EXP_BASE_PER_GAME_MIN,
+            feeling_factor: STUDY_DEFAULT_FEELING_FACTOR,
+            finish_bonus: STUDY_DEFAULT_FINISH_BONUS,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StudySession {
+    total_secs: f64,
+    elapsed_secs: f64,
+    accumulated_primary_exp: f64,
+}
+
+impl StudySession {
+    fn new(mode: StudyMode, duration_secs: u64) -> Self {
+        let _ = mode;
+        Self {
+            total_secs: duration_secs.max(1) as f64,
+            elapsed_secs: 0.0,
+            accumulated_primary_exp: 0.0,
+        }
+    }
+
+    fn remaining_secs(&self) -> u64 {
+        (self.total_secs - self.elapsed_secs).max(0.0).ceil() as u64
+    }
+}
 
 // ===== 面板显示上限 =====
 #[derive(Debug, Clone, Copy)]
@@ -45,6 +93,7 @@ pub struct PetStatsService {
     stats: Rc<RefCell<PetStats>>,
     limits: Rc<RefCell<PanelLimits>>,
     runtime_state: Rc<RefCell<PetRuntimeState>>,
+    study_session: Rc<RefCell<Option<StudySession>>>,
     secs_since_last_interact: Rc<RefCell<f64>>,
     logic_interval_secs: f64,
 }
@@ -62,6 +111,7 @@ impl PetStatsService {
             stats: Rc::new(RefCell::new(initial_stats)),
             limits: Rc::new(RefCell::new(PanelLimits::default())),
             runtime_state: Rc::new(RefCell::new(PetRuntimeState::Nomal)),
+            study_session: Rc::new(RefCell::new(None)),
             secs_since_last_interact: Rc::new(RefCell::new(0.0)),
             logic_interval_secs: clamp_logic_interval(logic_interval_secs),
         }
@@ -73,6 +123,7 @@ impl PetStatsService {
             stats,
             limits: Rc::new(RefCell::new(PanelLimits::default())),
             runtime_state: Rc::new(RefCell::new(PetRuntimeState::Nomal)),
+            study_session: Rc::new(RefCell::new(None)),
             secs_since_last_interact: Rc::new(RefCell::new(0.0)),
             logic_interval_secs: clamp_logic_interval(logic_interval_secs),
         }
@@ -99,6 +150,36 @@ impl PetStatsService {
 
     pub fn runtime_state(&self) -> PetRuntimeState {
         *self.runtime_state.borrow()
+    }
+
+    #[allow(dead_code)]
+    pub fn is_studying(&self) -> bool {
+        self.study_session.borrow().is_some()
+    }
+
+    pub fn study_remaining_secs(&self) -> Option<u64> {
+        self.study_session
+            .borrow()
+            .as_ref()
+            .map(StudySession::remaining_secs)
+    }
+
+    pub fn start_study(&mut self, mode: StudyMode, duration_secs: u64) -> bool {
+        {
+            let stats = self.stats.borrow();
+            if stats.strength < INTERACT_MIN_STRENGTH_REQUIRED {
+                return false;
+            }
+        }
+
+        *self.secs_since_last_interact.borrow_mut() = 0.0;
+        *self.study_session.borrow_mut() = Some(StudySession::new(mode, duration_secs));
+        *self.runtime_state.borrow_mut() = PetRuntimeState::Study;
+        true
+    }
+
+    pub fn stop_study(&mut self) -> bool {
+        self.finish_study(false)
     }
 
     // 配置更新只调整面板显示上限，不覆盖运行中的角色数值。
@@ -148,13 +229,16 @@ impl PetStatsService {
             *secs_since_last_interact += delta_secs;
         }
 
-        match self.runtime_state() {
+        let runtime_state = self.runtime_state();
+
+        match runtime_state {
             PetRuntimeState::Sleep => self.apply_sleep_tick(game_minutes),
+            PetRuntimeState::Study => self.apply_study_tick(delta_secs, game_minutes),
             PetRuntimeState::Work => self.apply_work_tick(game_minutes),
             PetRuntimeState::Nomal => self.apply_nomal_tick(game_minutes),
         }
 
-        self.apply_interaction_decay(game_minutes);
+        self.apply_interaction_decay(game_minutes, runtime_state);
         self.apply_negative_penalties();
         self.apply_global_feeling_bonus(game_minutes);
         self.apply_global_drink_effect(game_minutes);
@@ -345,6 +429,78 @@ impl PetStatsService {
         stats.money = stats.money.saturating_add(output.round() as u64);
     }
 
+    fn apply_study_tick(&mut self, delta_secs: f64, game_minutes: f64) {
+        if self.study_session.borrow().is_none() {
+            *self.runtime_state.borrow_mut() = PetRuntimeState::Nomal;
+            return;
+        }
+
+        let profile = StudyProfile::default();
+
+        {
+            let mut stats = self.stats.borrow_mut();
+            let mut session_ref = self.study_session.borrow_mut();
+            let Some(session) = session_ref.as_mut() else {
+                *self.runtime_state.borrow_mut() = PetRuntimeState::Nomal;
+                return;
+            };
+
+            let needed_food = profile.food_cost_per_game_min * game_minutes;
+            let needed_drink = profile.drink_cost_per_game_min * game_minutes;
+            let low_threshold = stats.strength_max * 0.25;
+            let high_threshold = stats.strength_max * 0.60;
+
+            let mut efficiency = 0.0;
+
+            if stats.strength > stats.strength_max * 0.25 + needed_food * 0.3 + needed_drink * 0.3 {
+                efficiency += 0.1;
+                stats.strength -= (needed_food + needed_drink) * 0.3;
+            }
+
+            let food_cost = if stats.strength_food <= low_threshold {
+                efficiency += 0.2;
+                if stats.strength >= needed_food {
+                    efficiency += 0.1;
+                }
+                stats.health -= needed_food * 0.5;
+                needed_food * 0.5
+            } else {
+                efficiency += 0.4;
+                if stats.strength_food >= high_threshold {
+                    efficiency += 0.1;
+                }
+                needed_food
+            };
+
+            let drink_cost = if stats.strength_drink <= low_threshold {
+                efficiency += 0.2;
+                if stats.strength >= needed_drink {
+                    efficiency += 0.1;
+                }
+                stats.health -= needed_drink * 0.5;
+                needed_drink * 0.5
+            } else {
+                efficiency += 0.4;
+                if stats.strength_drink >= high_threshold {
+                    efficiency += 0.1;
+                }
+                needed_drink
+            };
+
+            stats.strength_food -= food_cost;
+            stats.strength_drink -= drink_cost;
+
+            let add_exp = (game_minutes * profile.exp_base_per_game_min * (2.0 * efficiency - 0.5)).max(0.0);
+            stats.exp += add_exp;
+            session.accumulated_primary_exp += add_exp;
+            session.elapsed_secs += delta_secs;
+        }
+
+        if matches!(self.study_remaining_secs(), Some(0)) {
+            self.finish_study(true);
+        }
+    }
+
     fn apply_nomal_tick(&mut self, game_minutes: f64) {
         let mut stats = self.stats.borrow_mut();
         let half = stats.strength_max * 0.5;
@@ -368,14 +524,21 @@ impl PetStatsService {
         stats.exp += game_minutes;
     }
 
-    fn apply_interaction_decay(&mut self, time_scale: f64) {
+    fn apply_interaction_decay(&mut self, time_scale: f64, runtime_state: PetRuntimeState) {
         let idle_minutes = *self.secs_since_last_interact.borrow() / 60.0;
         if idle_minutes < 1.0 {
             return;
         }
 
         let mut stats = self.stats.borrow_mut();
-        let feeling_decay = (idle_minutes.sqrt() * time_scale / 4.0).min(stats.feeling_max / 800.0);
+        let base_decay = (idle_minutes.sqrt() * time_scale / 4.0).min(stats.feeling_max / 800.0);
+        let feeling_decay = match runtime_state {
+            PetRuntimeState::Study => {
+                let feeling_factor = StudyProfile::default().feeling_factor;
+                base_decay * (0.5 + feeling_factor / 2.0)
+            }
+            _ => base_decay,
+        };
         stats.feeling -= feeling_decay;
     }
 
@@ -430,6 +593,20 @@ impl PetStatsService {
 
     pub fn cal_mode(&self) -> PetMode {
         self.stats.borrow().cal_mode()
+    }
+
+    fn finish_study(&mut self, grant_finish_bonus: bool) -> bool {
+        let Some(session) = self.study_session.borrow_mut().take() else {
+            return false;
+        };
+
+        if grant_finish_bonus {
+            let finish_bonus = session.accumulated_primary_exp * StudyProfile::default().finish_bonus;
+            self.stats.borrow_mut().exp += finish_bonus;
+        }
+
+        *self.runtime_state.borrow_mut() = PetRuntimeState::Nomal;
+        true
     }
 }
 
@@ -545,5 +722,47 @@ impl PetStatsService {
     #[allow(dead_code)]
     pub fn clear_inventory(&mut self) {
         self.stats.borrow_mut().inventory.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_service() -> PetStatsService {
+        let mut stats = PetStats::default();
+        stats.feeling = 50.0;
+        stats.strength = 100.0;
+        stats.strength_food = 100.0;
+        stats.strength_drink = 100.0;
+        PetStatsService::new(stats, 15.0)
+    }
+
+    #[test]
+    fn study_completion_grants_finish_bonus() {
+        let mut service = build_service();
+
+        assert!(service.start_study(StudyMode::Book, 30));
+        service.on_tick(15.0);
+        service.on_tick(15.0);
+
+        let stats = service.get_stats();
+        assert!((stats.exp - 16.32).abs() < 0.001);
+        assert!(!service.is_studying());
+        assert_eq!(service.runtime_state(), PetRuntimeState::Nomal);
+    }
+
+    #[test]
+    fn manual_stop_does_not_grant_finish_bonus() {
+        let mut service = build_service();
+
+        assert!(service.start_study(StudyMode::Paint, 30));
+        service.on_tick(15.0);
+        assert!(service.stop_study());
+
+        let stats = service.get_stats();
+        assert!((stats.exp - 6.8).abs() < 0.001);
+        assert!(!service.is_studying());
+        assert_eq!(service.runtime_state(), PetRuntimeState::Nomal);
     }
 }
