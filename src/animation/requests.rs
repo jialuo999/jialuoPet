@@ -35,6 +35,12 @@ pub(crate) const WORK_ANIM_COPYWRITING_REQUESTED: u8 = 2;
 pub(crate) const WORK_ANIM_STREAMING_REQUESTED: u8 = 3;
 pub(crate) const WORK_ANIM_STOP_REQUESTED: u8 = 4;
 
+pub(crate) const PLAY_ANIM_IDLE: u8 = 0;
+pub(crate) const PLAY_ANIM_GAME_REQUESTED: u8 = 1;
+pub(crate) const PLAY_ANIM_REMOVE_OBJECT_REQUESTED: u8 = 2;
+pub(crate) const PLAY_ANIM_ROPE_SKIPPING_REQUESTED: u8 = 3;
+pub(crate) const PLAY_ANIM_STOP_REQUESTED: u8 = 4;
+
 // ===== 全局请求状态（原子变量） =====
 static DRAG_RAISE_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(DRAG_ANIM_IDLE);
 static PINCH_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(PINCH_ANIM_IDLE);
@@ -45,6 +51,8 @@ static STUDY_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(STUDY_ANIM_IDLE);
 static STUDY_ANIMATION_DURATION_SECS: AtomicU32 = AtomicU32::new(1800);
 static WORK_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(WORK_ANIM_IDLE);
 static WORK_ANIMATION_DURATION_SECS: AtomicU32 = AtomicU32::new(1800);
+static PLAY_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(PLAY_ANIM_IDLE);
+static PLAY_ANIMATION_DURATION_SECS: AtomicU32 = AtomicU32::new(1800);
 static SHUTDOWN_ANIMATION_FINISHED: AtomicBool = AtomicBool::new(false);
 static ANIMATION_CONFIG_RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -59,6 +67,8 @@ pub(crate) struct AnimationRequests {
     pub(crate) study_duration_secs: u32,
     pub(crate) work: u8,
     pub(crate) work_duration_secs: u32,
+    pub(crate) play: u8,
+    pub(crate) play_duration_secs: u32,
 }
 
 // ===== 请求写入接口 =====
@@ -141,6 +151,25 @@ pub fn request_work_stop_animation() {
     WORK_ANIMATION_PHASE.store(WORK_ANIM_STOP_REQUESTED, Ordering::Relaxed);
 }
 
+pub fn request_play_game_animation(duration_secs: u32) {
+    PLAY_ANIMATION_DURATION_SECS.store(duration_secs.max(1), Ordering::Relaxed);
+    PLAY_ANIMATION_PHASE.store(PLAY_ANIM_GAME_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_play_remove_object_animation(duration_secs: u32) {
+    PLAY_ANIMATION_DURATION_SECS.store(duration_secs.max(1), Ordering::Relaxed);
+    PLAY_ANIMATION_PHASE.store(PLAY_ANIM_REMOVE_OBJECT_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_play_rope_skipping_animation(duration_secs: u32) {
+    PLAY_ANIMATION_DURATION_SECS.store(duration_secs.max(1), Ordering::Relaxed);
+    PLAY_ANIMATION_PHASE.store(PLAY_ANIM_ROPE_SKIPPING_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_play_stop_animation() {
+    PLAY_ANIMATION_PHASE.store(PLAY_ANIM_STOP_REQUESTED, Ordering::Relaxed);
+}
+
 pub fn request_animation_config_reload() {
     ANIMATION_CONFIG_RELOAD_REQUESTED.store(true, Ordering::Relaxed);
 }
@@ -165,6 +194,8 @@ pub(crate) fn consume_requests() -> AnimationRequests {
         study_duration_secs: STUDY_ANIMATION_DURATION_SECS.load(Ordering::Relaxed),
         work: WORK_ANIMATION_PHASE.swap(WORK_ANIM_IDLE, Ordering::Relaxed),
         work_duration_secs: WORK_ANIMATION_DURATION_SECS.load(Ordering::Relaxed),
+        play: PLAY_ANIMATION_PHASE.swap(PLAY_ANIM_IDLE, Ordering::Relaxed),
+        play_duration_secs: PLAY_ANIMATION_DURATION_SECS.load(Ordering::Relaxed),
     }
 }
 

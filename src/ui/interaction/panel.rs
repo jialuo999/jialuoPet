@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::animation::{
+    request_play_game_animation, request_play_remove_object_animation,
+    request_play_rope_skipping_animation, request_play_stop_animation,
     request_study_book_animation, request_study_paint_animation, request_study_research_animation,
     request_study_stop_animation, request_work_clean_animation,
     request_work_copywriting_animation, request_work_stop_animation,
@@ -98,6 +100,31 @@ impl WorkMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlayMode {
+    Game,
+    RemoveObject,
+    RopeSkipping,
+}
+
+impl PlayMode {
+    fn from_label(label: &str) -> Self {
+        match label {
+            "删数字" => Self::RemoveObject,
+            "跳绳" => Self::RopeSkipping,
+            _ => Self::Game,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Game => "玩游戏",
+            Self::RemoveObject => "删数字",
+            Self::RopeSkipping => "跳绳",
+        }
+    }
+}
+
 pub struct InteractionPanel {
     window: Window,
     title: Label,
@@ -107,10 +134,12 @@ pub struct InteractionPanel {
     category_buttons: HashMap<InteractCategory, Button>,
     study_mode_combo: ComboBoxText,
     work_mode_combo: ComboBoxText,
+    play_mode_combo: ComboBoxText,
     study_duration_combo: ComboBoxText,
     action_button: Button,
     stop_study_button: Button,
     stop_work_button: Button,
+    stop_play_button: Button,
     stats_service: PetStatsService,
     on_after_interact: Rc<dyn Fn()>,
 }
@@ -198,6 +227,14 @@ impl InteractionPanel {
         work_mode_combo.set_halign(Align::Start);
         right_box.append(&work_mode_combo);
 
+        let play_mode_combo = ComboBoxText::new();
+        play_mode_combo.append_text("玩游戏");
+        play_mode_combo.append_text("删数字");
+        play_mode_combo.append_text("跳绳");
+        play_mode_combo.set_active(Some(0));
+        play_mode_combo.set_halign(Align::Start);
+        right_box.append(&play_mode_combo);
+
         let study_duration_combo = ComboBoxText::new();
         study_duration_combo.append_text("30分钟");
         study_duration_combo.append_text("1小时");
@@ -221,6 +258,9 @@ impl InteractionPanel {
 
         let stop_work_button = Button::with_label("停止工作");
         bottom_actions.append(&stop_work_button);
+
+        let stop_play_button = Button::with_label("停止玩耍");
+        bottom_actions.append(&stop_play_button);
 
         let close_button = Button::with_label("退出");
         bottom_actions.append(&close_button);
@@ -252,10 +292,12 @@ impl InteractionPanel {
             category_buttons,
             study_mode_combo,
             work_mode_combo,
+            play_mode_combo,
             study_duration_combo,
             action_button,
             stop_study_button,
             stop_work_button,
+            stop_play_button,
             stats_service,
             on_after_interact,
         };
@@ -264,6 +306,7 @@ impl InteractionPanel {
         panel.connect_action_button();
         panel.connect_stop_study_button();
         panel.connect_stop_work_button();
+        panel.connect_stop_play_button();
         panel.switch_category(category);
 
         panel
@@ -291,12 +334,19 @@ impl InteractionPanel {
             .set_visible(category == InteractCategory::Study);
         self.work_mode_combo
             .set_visible(category == InteractCategory::Work);
+        self.play_mode_combo
+            .set_visible(category == InteractCategory::Play);
         self.study_duration_combo
-            .set_visible(matches!(category, InteractCategory::Study | InteractCategory::Work));
+            .set_visible(matches!(
+                category,
+                InteractCategory::Study | InteractCategory::Work | InteractCategory::Play
+            ));
         self.stop_study_button
             .set_visible(category == InteractCategory::Study);
         self.stop_work_button
             .set_visible(category == InteractCategory::Work);
+        self.stop_play_button
+            .set_visible(category == InteractCategory::Play);
         self.status_label.set_text(&format!("当前选项：{}", category.menu_label()));
         self.update_sidebar_state();
     }
@@ -312,9 +362,11 @@ impl InteractionPanel {
             let category_buttons = self.category_buttons.clone();
             let study_mode_combo = self.study_mode_combo.clone();
             let work_mode_combo = self.work_mode_combo.clone();
+            let play_mode_combo = self.play_mode_combo.clone();
             let study_duration_combo = self.study_duration_combo.clone();
             let stop_study_button = self.stop_study_button.clone();
             let stop_work_button = self.stop_work_button.clone();
+            let stop_play_button = self.stop_play_button.clone();
 
             button.connect_clicked(move |_| {
                 current_category.set(category);
@@ -323,10 +375,15 @@ impl InteractionPanel {
                 description.set_text(category.description());
                 study_mode_combo.set_visible(category == InteractCategory::Study);
                 work_mode_combo.set_visible(category == InteractCategory::Work);
+                play_mode_combo.set_visible(category == InteractCategory::Play);
                 study_duration_combo
-                    .set_visible(matches!(category, InteractCategory::Study | InteractCategory::Work));
+                    .set_visible(matches!(
+                        category,
+                        InteractCategory::Study | InteractCategory::Work | InteractCategory::Play
+                    ));
                 stop_study_button.set_visible(category == InteractCategory::Study);
                 stop_work_button.set_visible(category == InteractCategory::Work);
+                stop_play_button.set_visible(category == InteractCategory::Play);
                 status_label.set_text(&format!("当前选项：{}", category.menu_label()));
 
                 for (button_category, button) in &category_buttons {
@@ -347,6 +404,7 @@ impl InteractionPanel {
         let on_after_interact = self.on_after_interact.clone();
         let study_mode_combo = self.study_mode_combo.clone();
         let work_mode_combo = self.work_mode_combo.clone();
+        let play_mode_combo = self.play_mode_combo.clone();
         let study_duration_combo = self.study_duration_combo.clone();
 
         self.action_button.connect_clicked(move |_| {
@@ -388,38 +446,64 @@ impl InteractionPanel {
             } else {
                 let interact_type = category.interact_type();
                 if stats_service.on_interact(interact_type) {
-                    if category == InteractCategory::Work {
-                        let work_mode_label = work_mode_combo
-                            .active_text()
-                            .map(|text| text.to_string())
-                            .unwrap_or_else(|| "擦屏幕".to_string());
-                        let work_mode = WorkMode::from_label(&work_mode_label);
+                    let duration_secs: u32 = match study_duration_combo
+                        .active_text()
+                        .as_ref()
+                        .map(|text| text.as_str())
+                    {
+                        Some("1小时") => 3600,
+                        _ => 1800,
+                    };
+                    let duration_text = if duration_secs == 3600 { "1小时" } else { "30分钟" };
 
-                        let duration_secs: u32 = match study_duration_combo
-                            .active_text()
-                            .as_ref()
-                            .map(|text| text.as_str())
-                        {
-                            Some("1小时") => 3600,
-                            _ => 1800,
-                        };
+                    match category {
+                        InteractCategory::Work => {
+                            let work_mode_label = work_mode_combo
+                                .active_text()
+                                .map(|text| text.to_string())
+                                .unwrap_or_else(|| "擦屏幕".to_string());
+                            let work_mode = WorkMode::from_label(&work_mode_label);
 
-                        match work_mode {
-                            WorkMode::Clean => request_work_clean_animation(duration_secs),
-                            WorkMode::Copywriting => {
-                                request_work_copywriting_animation(duration_secs)
+                            match work_mode {
+                                WorkMode::Clean => request_work_clean_animation(duration_secs),
+                                WorkMode::Copywriting => {
+                                    request_work_copywriting_animation(duration_secs)
+                                }
+                                WorkMode::Streaming => request_work_streaming_animation(duration_secs),
                             }
-                            WorkMode::Streaming => request_work_streaming_animation(duration_secs),
-                        }
 
-                        let duration_text = if duration_secs == 3600 { "1小时" } else { "30分钟" };
-                        status_label.set_text(&format!(
-                            "工作已开始：{}，预计 {}",
-                            work_mode.label(),
-                            duration_text
-                        ));
-                    } else {
-                    status_label.set_text(&format!("已执行：{}", category.menu_label()));
+                            status_label.set_text(&format!(
+                                "工作已开始：{}，预计 {}",
+                                work_mode.label(),
+                                duration_text
+                            ));
+                        }
+                        InteractCategory::Play => {
+                            let play_mode_label = play_mode_combo
+                                .active_text()
+                                .map(|text| text.to_string())
+                                .unwrap_or_else(|| "玩游戏".to_string());
+                            let play_mode = PlayMode::from_label(&play_mode_label);
+
+                            match play_mode {
+                                PlayMode::Game => request_play_game_animation(duration_secs),
+                                PlayMode::RemoveObject => {
+                                    request_play_remove_object_animation(duration_secs)
+                                }
+                                PlayMode::RopeSkipping => {
+                                    request_play_rope_skipping_animation(duration_secs)
+                                }
+                            }
+
+                            status_label.set_text(&format!(
+                                "玩耍已开始：{}，预计 {}",
+                                play_mode.label(),
+                                duration_text
+                            ));
+                        }
+                        InteractCategory::Study => {
+                            status_label.set_text(&format!("已执行：{}", category.menu_label()));
+                        }
                     }
                     true
                 } else {
@@ -457,6 +541,16 @@ impl InteractionPanel {
         self.stop_work_button.connect_clicked(move |_| {
             request_work_stop_animation();
             status_label.set_text("已手动停止工作");
+            on_after_interact();
+        });
+    }
+
+    fn connect_stop_play_button(&self) {
+        let status_label = self.status_label.clone();
+        let on_after_interact = self.on_after_interact.clone();
+        self.stop_play_button.connect_clicked(move |_| {
+            request_play_stop_animation();
+            status_label.set_text("已手动停止玩耍");
             on_after_interact();
         });
     }

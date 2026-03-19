@@ -23,6 +23,8 @@ use super::requests::{
     consume_animation_config_reload_request, consume_requests, set_shutdown_animation_finished,
     AnimationRequests, DRAG_ANIM_END_REQUESTED, DRAG_ANIM_LOOP_REQUESTED,
     DRAG_ANIM_START_REQUESTED, HOVER_ANIM_END_REQUESTED, HOVER_ANIM_START_REQUESTED,
+    PLAY_ANIM_GAME_REQUESTED, PLAY_ANIM_REMOVE_OBJECT_REQUESTED,
+    PLAY_ANIM_ROPE_SKIPPING_REQUESTED, PLAY_ANIM_STOP_REQUESTED,
     PINCH_ANIM_END_REQUESTED, PINCH_ANIM_LOOP_REQUESTED,
     PINCH_ANIM_START_REQUESTED, SHUTDOWN_ANIM_REQUESTED, TOUCH_ANIM_BODY_REQUESTED,
     TOUCH_ANIM_HEAD_REQUESTED, STUDY_ANIM_BOOK_REQUESTED, STUDY_ANIM_PAINT_REQUESTED,
@@ -40,6 +42,7 @@ struct PlayerSet {
     touch: TouchPlayer,
     study: StudyPlayer,
     work: StudyPlayer,
+    play: StudyPlayer,
     startup: StartupPlayer,
     side_hide_right_main: SideHideRightMainPlayer,
     side_hide_right_rise: SideHideRightMainPlayer,
@@ -68,6 +71,7 @@ impl PlayerSet {
         self.touch.reload(mode);
         self.study.reload(mode);
         self.work.reload(mode);
+        self.play.reload(mode);
         self.shutdown.reload(mode);
         self.side_hide_right_main.reload(mode);
         self.side_hide_right_rise.reload(mode);
@@ -122,6 +126,7 @@ fn maybe_trigger_side_hide_right_main(
         || players.touch.is_active()
         || players.study.is_active()
         || players.work.is_active()
+        || players.play.is_active()
         || players.startup.is_active()
         || players.side_hide_right_main.is_active()
         || players.side_hide_right_rise.is_active()
@@ -178,6 +183,7 @@ fn maybe_trigger_side_hide_left_main(
         || players.touch.is_active()
         || players.study.is_active()
         || players.work.is_active()
+        || players.play.is_active()
         || players.startup.is_active()
         || players.side_hide_right_main.is_active()
         || players.side_hide_right_rise.is_active()
@@ -367,6 +373,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             players.shutdown.stop();
             players.study.interrupt_by_drag();
             players.work.interrupt_by_drag();
+            players.play.interrupt_by_drag();
             players.side_hide_right_main.stop();
             players.side_hide_right_rise.stop();
             players.side_hide_left_main.stop();
@@ -383,6 +390,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             players.shutdown.stop();
             players.study.interrupt_by_drag();
             players.work.interrupt_by_drag();
+            players.play.interrupt_by_drag();
             players.side_hide_right_main.stop();
             players.side_hide_right_rise.stop();
             players.side_hide_left_main.stop();
@@ -411,6 +419,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         players.touch.stop();
         players.study.stop();
         players.work.stop();
+        players.play.stop();
         players.startup.stop();
         players.side_hide_right_main.stop();
         players.side_hide_right_rise.stop();
@@ -428,7 +437,9 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         STUDY_ANIM_BOOK_REQUESTED => {
             players.study.clear_pending_resume_after_drag();
             players.work.clear_pending_resume_after_drag();
+            players.play.clear_pending_resume_after_drag();
             players.work.stop();
+            players.play.stop();
             players.drag_raise.stop();
             players.pinch.stop();
             players.touch.stop();
@@ -444,7 +455,9 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         STUDY_ANIM_PAINT_REQUESTED => {
             players.study.clear_pending_resume_after_drag();
             players.work.clear_pending_resume_after_drag();
+            players.play.clear_pending_resume_after_drag();
             players.work.stop();
+            players.play.stop();
             players.drag_raise.stop();
             players.pinch.stop();
             players.touch.stop();
@@ -460,7 +473,9 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         STUDY_ANIM_RESEARCH_REQUESTED => {
             players.study.clear_pending_resume_after_drag();
             players.work.clear_pending_resume_after_drag();
+            players.play.clear_pending_resume_after_drag();
             players.work.stop();
+            players.play.stop();
             players.drag_raise.stop();
             players.pinch.stop();
             players.touch.stop();
@@ -485,7 +500,9 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         WORK_ANIM_CLEAN_REQUESTED => {
             players.work.clear_pending_resume_after_drag();
             players.study.clear_pending_resume_after_drag();
+            players.play.clear_pending_resume_after_drag();
             players.study.stop();
+            players.play.stop();
             players.drag_raise.stop();
             players.pinch.stop();
             players.touch.stop();
@@ -501,7 +518,9 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         WORK_ANIM_COPYWRITING_REQUESTED => {
             players.work.clear_pending_resume_after_drag();
             players.study.clear_pending_resume_after_drag();
+            players.play.clear_pending_resume_after_drag();
             players.study.stop();
+            players.play.stop();
             players.drag_raise.stop();
             players.pinch.stop();
             players.touch.stop();
@@ -517,7 +536,9 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         WORK_ANIM_STREAMING_REQUESTED => {
             players.work.clear_pending_resume_after_drag();
             players.study.clear_pending_resume_after_drag();
+            players.play.clear_pending_resume_after_drag();
             players.study.stop();
+            players.play.stop();
             players.drag_raise.stop();
             players.pinch.stop();
             players.touch.stop();
@@ -533,6 +554,69 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         WORK_ANIM_STOP_REQUESTED => {
             players.work.clear_pending_resume_after_drag();
             players.work.interrupt(false);
+            return;
+        }
+        _ => {}
+    }
+
+    match reqs.play {
+        PLAY_ANIM_GAME_REQUESTED => {
+            players.play.clear_pending_resume_after_drag();
+            players.study.clear_pending_resume_after_drag();
+            players.work.clear_pending_resume_after_drag();
+            players.study.stop();
+            players.work.stop();
+            players.drag_raise.stop();
+            players.pinch.stop();
+            players.touch.stop();
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.stop();
+            players.side_hide_left_main.stop();
+            players.side_hide_left_rise.stop();
+            players
+                .play
+                .start_book(&mut players.startup, reqs.play_duration_secs as u64);
+            return;
+        }
+        PLAY_ANIM_REMOVE_OBJECT_REQUESTED => {
+            players.play.clear_pending_resume_after_drag();
+            players.study.clear_pending_resume_after_drag();
+            players.work.clear_pending_resume_after_drag();
+            players.study.stop();
+            players.work.stop();
+            players.drag_raise.stop();
+            players.pinch.stop();
+            players.touch.stop();
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.stop();
+            players.side_hide_left_main.stop();
+            players.side_hide_left_rise.stop();
+            players
+                .play
+                .start_paint(&mut players.startup, reqs.play_duration_secs as u64);
+            return;
+        }
+        PLAY_ANIM_ROPE_SKIPPING_REQUESTED => {
+            players.play.clear_pending_resume_after_drag();
+            players.study.clear_pending_resume_after_drag();
+            players.work.clear_pending_resume_after_drag();
+            players.study.stop();
+            players.work.stop();
+            players.drag_raise.stop();
+            players.pinch.stop();
+            players.touch.stop();
+            players.side_hide_right_main.stop();
+            players.side_hide_right_rise.stop();
+            players.side_hide_left_main.stop();
+            players.side_hide_left_rise.stop();
+            players
+                .play
+                .start_research(&mut players.startup, reqs.play_duration_secs as u64);
+            return;
+        }
+        PLAY_ANIM_STOP_REQUESTED => {
+            players.play.clear_pending_resume_after_drag();
+            players.play.interrupt(false);
             return;
         }
         _ => {}
@@ -556,14 +640,22 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         || players.side_hide_left_main.is_active()
         || players.side_hide_left_rise.is_active();
 
-    if !players.study.is_active() && !players.work.is_active() && !has_blocking_request && !has_blocking_player {
+    if !players.study.is_active()
+        && !players.work.is_active()
+        && !players.play.is_active()
+        && !has_blocking_request
+        && !has_blocking_player
+    {
         players.study.resume_if_pending_after_drag(&mut players.startup);
         if !players.study.is_active() {
             players.work.resume_if_pending_after_drag(&mut players.startup);
+            if !players.work.is_active() {
+                players.play.resume_if_pending_after_drag(&mut players.startup);
+            }
         }
     }
 
-    if players.study.is_active() || players.work.is_active() {
+    if players.study.is_active() || players.work.is_active() || players.play.is_active() {
         let has_touch_or_pinch_request = matches!(
             reqs.pinch,
             PINCH_ANIM_START_REQUESTED | PINCH_ANIM_LOOP_REQUESTED | PINCH_ANIM_END_REQUESTED
@@ -572,6 +664,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
         if has_touch_or_pinch_request {
             players.study.interrupt_by_drag();
             players.work.interrupt_by_drag();
+            players.play.interrupt_by_drag();
         } else {
             return;
         }
@@ -645,6 +738,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             }
             players.study.interrupt_by_drag();
             players.work.interrupt_by_drag();
+            players.play.interrupt_by_drag();
             players.pinch.start(&mut players.touch, &mut players.startup);
         }
         PINCH_ANIM_LOOP_REQUESTED => {
@@ -653,6 +747,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             }
             players.study.interrupt_by_drag();
             players.work.interrupt_by_drag();
+            players.play.interrupt_by_drag();
             players.pinch.continue_loop(&mut players.touch, &mut players.startup);
         }
         PINCH_ANIM_END_REQUESTED => {
@@ -661,6 +756,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             }
             players.study.interrupt_by_drag();
             players.work.interrupt_by_drag();
+            players.play.interrupt_by_drag();
             players.pinch.end(&mut players.touch, &mut players.startup);
         }
         _ => {}
@@ -674,6 +770,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
                 }
                 players.study.interrupt_by_drag();
                 players.work.interrupt_by_drag();
+                players.play.interrupt_by_drag();
                 players.touch.start_head(&mut players.startup)
             }
             TOUCH_ANIM_BODY_REQUESTED => {
@@ -682,6 +779,7 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
                 }
                 players.study.interrupt_by_drag();
                 players.work.interrupt_by_drag();
+                players.play.interrupt_by_drag();
                 players.touch.start_body(&mut players.startup)
             }
             _ => {}
@@ -692,7 +790,11 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
 
 // ===== 模式同步：根据数值模式更新播放器素材 =====
 fn maybe_update_mode(players: &mut PlayerSet, stats_service: &PetStatsService) {
-    if players.startup.is_active() || players.study.is_active() || players.work.is_active() {
+    if players.startup.is_active()
+        || players.study.is_active()
+        || players.work.is_active()
+        || players.play.is_active()
+    {
         return;
     }
 
@@ -750,6 +852,14 @@ fn advance_frame(players: &mut PlayerSet) -> PathBuf {
             return frame;
         }
         players.work.interrupt(true);
+        return players.default_idle.enter().unwrap_or_default();
+    }
+
+    if players.play.is_active() {
+        if let Some(frame) = players.play.next_frame() {
+            return frame;
+        }
+        players.play.interrupt(true);
         return players.default_idle.enter().unwrap_or_default();
     }
 
@@ -837,6 +947,9 @@ fn build_players(
     let work_clean_root = body_asset_path(&animation_config.assets_body_root, "WORK/WorkClean");
     let work_copywriting_root = body_asset_path(&animation_config.assets_body_root, "WORK/WorkONE");
     let work_streaming_root = body_asset_path(&animation_config.assets_body_root, "WORK/WorkTWO");
+    let play_game_root = body_asset_path(&animation_config.assets_body_root, "WORK/PlayONE");
+    let play_remove_object_root = body_asset_path(&animation_config.assets_body_root, "WORK/RemoveObject");
+    let play_rope_skipping_root = body_asset_path(&animation_config.assets_body_root, "WORK/RopeSkipping");
     let side_hide_right_main_root =
         body_asset_path(&animation_config.assets_body_root, &animation_config.side_hide_right_main_root);
     let side_hide_right_rise_root =
@@ -862,6 +975,12 @@ fn build_players(
             work_clean_root,
             work_copywriting_root,
             work_streaming_root,
+            current_mode,
+        ),
+        play: StudyPlayer::new(
+            play_game_root,
+            play_remove_object_root,
+            play_rope_skipping_root,
             current_mode,
         ),
         startup: StartupPlayer::new(startup_root, current_mode),
@@ -926,6 +1045,7 @@ pub fn load_carousel_images(
             || players.touch.is_active()
             || players.study.is_active()
             || players.work.is_active()
+            || players.play.is_active()
             || players.side_hide_right_main.is_active()
             || players.side_hide_right_rise.is_active()
             || players.side_hide_left_main.is_active()
