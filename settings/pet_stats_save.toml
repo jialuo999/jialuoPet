@@ -1,29 +1,29 @@
 [stats]
 health = 100.0
-feeling = 122.88548741364836
+feeling = 122.4907030255929
 feeling_max = 123.0
-likability_max = 350.0
-strength = 84.65999999999876
-strength_max = 146.0
-strength_food = 137.149999999998
-strength_drink = 142.94999999999968
-likability = 350.0
-level = 26
+likability_max = 360.0
+strength = 82.75999999999864
+strength_max = 147.0
+strength_food = 135.0499999999975
+strength_drink = 138.74999999999991
+likability = 351.50000000000034
+level = 27
 level_stage = 0
-exp = 5061.4500000001
+exp = 19.750000000106468
 money = 6
 
 [stats.inventory.items]
-"矿泉水" = 1
-"鸡尾酒" = 1
-"电解质水" = 1
-"雷碧" = 1
-"椰汁" = 1
+"凉茶" = 1
 "格瓦斯" = 1
 "苏打水" = 1
-"1L纯净水" = 1
 "茶" = 1
-"伏特加" = 2
-"啤酒" = 1
-"凉茶" = 1
 "ab钙奶" = 2
+"1L纯净水" = 1
+"电解质水" = 1
+"伏特加" = 2
+"椰汁" = 1
+"矿泉水" = 1
+"雷碧" = 1
+"啤酒" = 1
+"鸡尾酒" = 1

@@ -9,7 +9,8 @@ use std::rc::Rc;
 use crate::animation::{
     request_study_book_animation, request_study_paint_animation, request_study_research_animation,
     request_study_stop_animation, request_work_clean_animation,
-    request_work_copywriting_animation, request_work_streaming_animation,
+    request_work_copywriting_animation, request_work_stop_animation,
+    request_work_streaming_animation,
 };
 use crate::stats::{InteractType, PetStatsService, StudyMode};
 
@@ -109,6 +110,7 @@ pub struct InteractionPanel {
     study_duration_combo: ComboBoxText,
     action_button: Button,
     stop_study_button: Button,
+    stop_work_button: Button,
     stats_service: PetStatsService,
     on_after_interact: Rc<dyn Fn()>,
 }
@@ -217,6 +219,9 @@ impl InteractionPanel {
         let stop_study_button = Button::with_label("停止学习");
         bottom_actions.append(&stop_study_button);
 
+        let stop_work_button = Button::with_label("停止工作");
+        bottom_actions.append(&stop_work_button);
+
         let close_button = Button::with_label("退出");
         bottom_actions.append(&close_button);
         panel_box.append(&bottom_actions);
@@ -250,6 +255,7 @@ impl InteractionPanel {
             study_duration_combo,
             action_button,
             stop_study_button,
+            stop_work_button,
             stats_service,
             on_after_interact,
         };
@@ -257,6 +263,7 @@ impl InteractionPanel {
         panel.connect_sidebar_handlers();
         panel.connect_action_button();
         panel.connect_stop_study_button();
+        panel.connect_stop_work_button();
         panel.switch_category(category);
 
         panel
@@ -288,6 +295,8 @@ impl InteractionPanel {
             .set_visible(matches!(category, InteractCategory::Study | InteractCategory::Work));
         self.stop_study_button
             .set_visible(category == InteractCategory::Study);
+        self.stop_work_button
+            .set_visible(category == InteractCategory::Work);
         self.status_label.set_text(&format!("当前选项：{}", category.menu_label()));
         self.update_sidebar_state();
     }
@@ -305,6 +314,7 @@ impl InteractionPanel {
             let work_mode_combo = self.work_mode_combo.clone();
             let study_duration_combo = self.study_duration_combo.clone();
             let stop_study_button = self.stop_study_button.clone();
+            let stop_work_button = self.stop_work_button.clone();
 
             button.connect_clicked(move |_| {
                 current_category.set(category);
@@ -316,6 +326,7 @@ impl InteractionPanel {
                 study_duration_combo
                     .set_visible(matches!(category, InteractCategory::Study | InteractCategory::Work));
                 stop_study_button.set_visible(category == InteractCategory::Study);
+                stop_work_button.set_visible(category == InteractCategory::Work);
                 status_label.set_text(&format!("当前选项：{}", category.menu_label()));
 
                 for (button_category, button) in &category_buttons {
@@ -437,6 +448,16 @@ impl InteractionPanel {
             } else {
                 status_label.set_text("当前没有进行中的学习任务");
             }
+        });
+    }
+
+    fn connect_stop_work_button(&self) {
+        let status_label = self.status_label.clone();
+        let on_after_interact = self.on_after_interact.clone();
+        self.stop_work_button.connect_clicked(move |_| {
+            request_work_stop_animation();
+            status_label.set_text("已手动停止工作");
+            on_after_interact();
         });
     }
 

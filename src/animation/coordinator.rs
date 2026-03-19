@@ -28,7 +28,7 @@ use super::requests::{
     TOUCH_ANIM_HEAD_REQUESTED, STUDY_ANIM_BOOK_REQUESTED, STUDY_ANIM_PAINT_REQUESTED,
     STUDY_ANIM_RESEARCH_REQUESTED, STUDY_ANIM_STOP_REQUESTED,
     WORK_ANIM_CLEAN_REQUESTED, WORK_ANIM_COPYWRITING_REQUESTED,
-    WORK_ANIM_STREAMING_REQUESTED,
+    WORK_ANIM_STOP_REQUESTED, WORK_ANIM_STREAMING_REQUESTED,
 };
 
 // ===== 运行时播放器集合 =====
@@ -528,6 +528,11 @@ fn dispatch_requests(players: &mut PlayerSet, reqs: AnimationRequests) {
             players
                 .work
                 .start_research(&mut players.startup, reqs.work_duration_secs as u64);
+            return;
+        }
+        WORK_ANIM_STOP_REQUESTED => {
+            players.work.clear_pending_resume_after_drag();
+            players.work.interrupt(false);
             return;
         }
         _ => {}

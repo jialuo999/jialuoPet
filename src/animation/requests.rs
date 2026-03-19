@@ -33,6 +33,7 @@ pub(crate) const WORK_ANIM_IDLE: u8 = 0;
 pub(crate) const WORK_ANIM_CLEAN_REQUESTED: u8 = 1;
 pub(crate) const WORK_ANIM_COPYWRITING_REQUESTED: u8 = 2;
 pub(crate) const WORK_ANIM_STREAMING_REQUESTED: u8 = 3;
+pub(crate) const WORK_ANIM_STOP_REQUESTED: u8 = 4;
 
 // ===== 全局请求状态（原子变量） =====
 static DRAG_RAISE_ANIMATION_PHASE: AtomicU8 = AtomicU8::new(DRAG_ANIM_IDLE);
@@ -134,6 +135,10 @@ pub fn request_work_copywriting_animation(duration_secs: u32) {
 pub fn request_work_streaming_animation(duration_secs: u32) {
     WORK_ANIMATION_DURATION_SECS.store(duration_secs.max(1), Ordering::Relaxed);
     WORK_ANIMATION_PHASE.store(WORK_ANIM_STREAMING_REQUESTED, Ordering::Relaxed);
+}
+
+pub fn request_work_stop_animation() {
+    WORK_ANIMATION_PHASE.store(WORK_ANIM_STOP_REQUESTED, Ordering::Relaxed);
 }
 
 pub fn request_animation_config_reload() {
